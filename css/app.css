@@ -142,13 +142,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 
 .app {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   height: 100%;
   max-width: 1320px;
   margin: 0 auto;
   padding: 24px 32px 24px;
   gap: 18px;
 }
+/* 两种模式：默认「今天」答案视图；.tree-open 切到状态树全貌 */
+.answer { display: flex; flex-direction: column; gap: 18px; overflow: auto; min-height: 0; }
+.app:not(.tree-open) { grid-template-rows: auto auto minmax(0, 1fr) 0; }
+.app.tree-open { grid-template-rows: auto auto 0 minmax(0, 1fr); }
+.app:not(.tree-open) .workspace { display: none; }
+.app.tree-open .answer { display: none; }
+.app:not(.tree-open) .back-today { display: none; }
 .topbar { display: flex; align-items: center; gap: 20px; }
 .back {
   font-size: 13px;
@@ -215,6 +222,38 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .np-go:hover { background: #2d2922; }
 .np-open { background: var(--surface); color: var(--ink-2); }
 .np-open:hover { background: var(--surface-solid); color: var(--ink); }
+
+/* 答案视图：卡点清单 + 今天能清掉的 */
+.ans-h { font-size: 12px; letter-spacing: 0.08em; color: var(--ink-3); margin-bottom: 10px; }
+.ans-h b { color: var(--rose); font-weight: 600; }
+.ans-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  margin-bottom: 8px;
+}
+.ans-item.is-blocked { border-left: 3px solid var(--rose); }
+.ans-item.is-today { border-left: 3px solid var(--sage); }
+.ans-main { flex: 1; min-width: 0; }
+.ans-name { font-weight: 600; font-size: 15px; }
+.ans-desc {
+  font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ans-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.ans-empty { font-size: 14px; color: var(--ink-3); padding: 4px 2px; }
+.ans-full {
+  align-self: flex-start;
+  font-size: 13px; color: var(--ink-2);
+  padding: 9px 16px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.ans-full:hover { background: var(--surface-solid); color: var(--ink); }
+.back-today { color: var(--teal); }
 .domain-card .dot {
   display: inline-block;
   width: 5px; height: 5px;
@@ -476,6 +515,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 
 @media (max-width: 960px) {
   .app { height: auto; padding: 18px; }
+  .app:not(.tree-open), .app.tree-open { grid-template-rows: auto auto auto auto; }
+  .answer { overflow: visible; }
   .topbar { flex-wrap: wrap; gap: 10px 12px; }
   .domains { order: 5; flex-basis: 100%; flex: 1 0 100%; overflow-x: auto; }
   .dot-time { margin-left: auto; }

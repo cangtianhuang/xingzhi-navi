@@ -17,6 +17,7 @@
     tick: null,
     clockTick: null,
     editor: null,
+    treeOpen: false,
     searchList: [],
     searchActive: 0,
     users: [],
@@ -540,6 +541,7 @@
         state.focusId = state.domain === "all" ? "root" : d.id;
         const first = data.nodes.find((n) => n.parentId === state.focusId);
         state.selectedId = first ? first.id : state.focusId;
+        state.treeOpen = true;
         renderApp();
       });
       box.appendChild(btn);
@@ -574,11 +576,84 @@
         </span>
       </div>`;
     box.querySelector("[data-go]").addEventListener("click", () => openFocus(pick));
-    box.querySelector("[data-open]").addEventListener("click", () => {
-      state.selectedId = pick.id;
-      if (pick.parentId) state.focusId = pick.parentId === "root" ? "root" : pick.parentId;
-      renderApp();
+    box.querySelector("[data-open]").addEventListener("click", () => jumpToTree(pick.id));
+  }
+
+  // 答案视图：卡住的 + 今天能清掉的（首屏只回答两个问题，树是二级）
+  function ansItemHTML(node, nodes, kind) {
+    const sug = suggestFor(node, nodes);
+    const desc = kind === "blocked" ? node.blockedReason || sug.text : sug.text;
+    const eta = node.estimateMin ? ` · 约 ${node.estimateMin} 分钟` : "";
+    return `<div class="ans-item is-${kind}" data-id="${node.id}">
+        <div class="ans-main">
+          <div class="ans-name">${escapeXml(node.name)}</div>
+          <div class="ans-desc">${escapeXml(desc)}${eta}</div>
+        </div>
+        <div class="ans-actions">
+          ${sug.canAct ? `<button class="np-go" data-go="${node.id}">开始做</button>` : ""}
+          <button class="np-open" data-open="${node.id}">去看看</button>
+        </div>
+      </div>`;
+  }
+
+  function renderAnswer(nodes) {
+    // 卡点优先取叶子（更具体、能上手）；没有卡住的叶子则退回卡住的项目
+    const blockedLeaves = nodes.filter(
+      (n) =>
+        (n.type === "task" || n.type === "project") &&
+        MapU.childrenOf(nodes, n.id).length === 0 &&
+        effStatus(n, nodes) === "blocked"
+    );
+    const blocked = blockedLeaves.length
+      ? blockedLeaves
+      : nodes.filter((n) => n.type === "project" && effStatus(n, nodes) === "blocked");
+    const today = nodes.filter(
+      (n) =>
+        n.type === "task" &&
+        effStatus(n, nodes) !== "done" &&
+        effStatus(n, nodes) !== "waiting" &&
+        n.estimateMin > 0 &&
+        n.estimateMin <= 30 &&
+        suggestFor(n, nodes).canAct
+    );
+
+    const bBox = $("#ans-blocked");
+    bBox.innerHTML =
+      `<div class="ans-h">卡住的${blocked.length ? ` · <b>${blocked.length}</b>` : ""}</div>` +
+      (blocked.length
+        ? blocked.slice(0, 6).map((n) => ansItemHTML(n, nodes, "blocked")).join("")
+        : `<div class="ans-empty">现在没有卡住的，挺好。</div>`);
+
+    const tBox = $("#ans-today");
+    tBox.innerHTML =
+      `<div class="ans-h">今天能清掉的${today.length ? ` · ${today.length}` : ""}</div>` +
+      (today.length
+        ? today.slice(0, 6).map((n) => ansItemHTML(n, nodes, "today")).join("")
+        : `<div class="ans-empty">没有能今天顺手做完的小事。</div>`);
+
+    [bBox, tBox].forEach((box) => {
+      box.querySelectorAll("[data-go]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const node = MapU.byId(nodes).get(btn.getAttribute("data-go"));
+          if (node) openFocus(node);
+        })
+      );
+      box.querySelectorAll("[data-open]").forEach((btn) =>
+        btn.addEventListener("click", () => jumpToTree(btn.getAttribute("data-open")))
+      );
     });
+  }
+
+  // 切到状态树全貌并定位到某节点
+  function jumpToTree(id) {
+    const nodes = currentNodes();
+    const node = MapU.byId(nodes).get(id);
+    state.treeOpen = true;
+    if (node) {
+      state.selectedId = id;
+      state.focusId = node.parentId && node.parentId !== "root" ? node.parentId : "root";
+    }
+    renderApp();
   }
 
   function ancestors(id) {
@@ -1023,9 +1098,9 @@
     if (!node) return;
     state.selectedId = id;
     state.focusId = node.parentId && node.parentId !== "root" ? node.parentId : "root";
+    state.treeOpen = true;
     closeSearch();
-    renderMap();
-    renderDetail();
+    renderApp();
   }
 
   // —— AI 设置弹窗（OneAPI / OpenAI 兼容） ——
@@ -1207,7 +1282,10 @@
   }
 
   function renderApp() {
+    const va = $("#view-app");
+    if (va) va.classList.toggle("tree-open", !!state.treeOpen);
     renderHero();
+    renderAnswer(DATA().nodes);
     renderMap();
     renderDetail();
     const ub = $("#btn-undo");
@@ -1307,6 +1385,14 @@
     $("#btn-redo").addEventListener("click", redo);
     $("#btn-ai").addEventListener("click", openAI);
     $("#btn-search").addEventListener("click", openSearch);
+    $("#btn-fullview").addEventListener("click", () => {
+      state.treeOpen = true;
+      renderApp();
+    });
+    $("#btn-backtoday").addEventListener("click", () => {
+      state.treeOpen = false;
+      renderApp();
+    });
     $("#btn-gen").addEventListener("click", openGen);
     $("#gen-form").addEventListener("submit", runGen);
     $("#gen-cancel").addEventListener("click", closeGen);

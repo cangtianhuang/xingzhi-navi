@@ -27,11 +27,18 @@
         <p id="greet-sub">看看现在怎么样，哪儿卡住了，然后做一件小事。</p>
       </section>
 
+      <section class="answer" id="answer">
+        <div class="ans-block" id="ans-blocked"></div>
+        <div class="ans-block" id="ans-today"></div>
+        <button class="ans-full" id="btn-fullview">看全貌 ▾</button>
+      </section>
+
       <section class="workspace">
         <div class="panel map-panel">
           <div class="panel-hd">
             <div class="crumbs" id="crumbs"></div>
             <div class="filters">
+              <button class="chip back-today" id="btn-backtoday" title="回到今天视图">← 回到今天</button>
               <button class="chip" data-filter="all">全部</button>
               <button class="chip is-on" data-filter="open">还没做完</button>
               <button class="chip" data-filter="today">能今天做完</button>
