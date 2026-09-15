@@ -5,11 +5,10 @@
   const NODE_KEY = "xingzhi-navi-nodes-v1";
   const OVERRIDE_KEY = "xingzhi-navi-overrides-v1";
   const LOG_KEY = "xingzhi-navi-log-v1";
-  const TONES = ["rose", "sage", "sand", "lilac"];
 
   const state = {
-    view: "home",
-    userId: null,
+    view: "app",
+    userId: "u-lin",
     focusId: "root",
     selectedId: null,
     filter: "open",
@@ -429,79 +428,26 @@
     return nodes.filter((n) => n.type === "project").filter((n) => effStatus(n, nodes) !== "done");
   }
 
-  function summaryOf(user) {
-    const nodes = applyOverrides(user.id, baseNodesFor(user.id));
-    const open = loopItems(nodes);
-    const blocked = open.filter((n) => effStatus(n, nodes) === "blocked").length;
-    return { open: open.length, blocked };
+  // 个人 OS：固定单一档案（林予），四个领域即多个方面，不再有成员名单
+  function ensureSingleUser() {
+    const seed = window.NAVI_SEED_USERS.find((u) => u.id === "u-lin") || window.NAVI_SEED_USERS[0];
+    if (!state.users.find((u) => u.id === seed.id)) state.users = [{ ...seed }];
+    state.userId = seed.id;
   }
 
-  function initials(name) {
-    return String(name || "成").slice(0, 1);
-  }
-
-  function renderHome() {
-    const list = $("#user-list");
-    list.innerHTML = "";
-    state.users.forEach((u) => {
-      const s = summaryOf(u);
-      const li = document.createElement("li");
-      li.innerHTML = `
-        <button class="user-row" data-enter="${u.id}">
-          <span class="avatar ${u.tone || "sand"}">${escapeXml(initials(u.name))}</span>
-          <span class="user-meta">
-            <b>${escapeXml(u.name)}</b>
-            <span>${escapeXml(u.title || "没填角色")}${u.note ? " · " + escapeXml(u.note) : ""}</span>
-          </span>
-          <span class="user-side">
-            <span class="user-flag">${s.blocked ? s.blocked + " 件卡住了" : s.open ? s.open + " 件还没做完" : "新成员"}</span>
-          </span>
-        </button>
-        <button class="user-del" data-del="${u.id}" title="移除" aria-label="移除 ${escapeXml(u.name)}">×</button>`;
-      li.style.display = "grid";
-      li.style.gridTemplateColumns = "1fr auto";
-      li.style.alignItems = "center";
-      li.style.gap = "6px";
-      list.appendChild(li);
-    });
-
-    list.querySelectorAll("[data-enter]").forEach((btn) => {
-      btn.addEventListener("click", () => enterUser(btn.getAttribute("data-enter")));
-    });
-    list.querySelectorAll("[data-del]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        removeUser(btn.getAttribute("data-del"));
-      });
-    });
-  }
-
-  function enterUser(id) {
-    const user = state.users.find((u) => u.id === id);
-    if (!user) return;
-    state.userId = id;
+  function boot() {
+    ensureSingleUser();
     state.view = "app";
     state.domain = "all";
     state.focusId = "root";
     state.filter = "open";
     const nodes = currentNodes();
     const pick = topPick(nodes);
-    const first = pick || nodes.find((n) => effStatus(n, nodes) === "blocked") || nodes.find((n) => n.type === "project") || nodes[0];
+    const first =
+      pick || nodes.find((n) => effStatus(n, nodes) === "blocked") || nodes.find((n) => n.type === "project") || nodes[0];
     state.selectedId = first ? first.id : "root";
-    $("#view-home").classList.add("is-hidden");
-    $("#view-app").classList.remove("is-hidden");
     startClock();
     renderApp();
-  }
-
-  function goHome() {
-    state.view = "home";
-    state.userId = null;
-    closeFocus();
-    stopClock();
-    $("#view-app").classList.add("is-hidden");
-    $("#view-home").classList.remove("is-hidden");
-    renderHome();
   }
 
   function startClock() {
@@ -517,37 +463,6 @@
   function stopClock() {
     if (state.clockTick) clearInterval(state.clockTick);
     state.clockTick = null;
-  }
-
-  function removeUser(id) {
-    if (state.users.length <= 1) {
-      alert("至少保留一位成员。");
-      return;
-    }
-    state.users = state.users.filter((u) => u.id !== id);
-    // 连同该成员的所有本地数据一起清掉，避免残留孤儿数据
-    delete state.extraNodes[id];
-    delete state.overrides[id];
-    delete state.log[id];
-    delete state.undo[id];
-    delete state.redo[id];
-    saveStore();
-    renderHome();
-  }
-
-  function addUser(name, title) {
-    const id = "u-" + Date.now().toString(36);
-    const user = {
-      id,
-      name,
-      title: title || "没填角色",
-      note: "刚加进来，状态图还是空的。",
-      tone: TONES[state.users.length % TONES.length],
-    };
-    state.users.push(user);
-    state.extraNodes[id] = window.NAVI_EMPTY_NODES(name);
-    saveStore();
-    renderHome();
   }
 
   function allNodes() {
@@ -1379,7 +1294,6 @@
     $("#overlay").addEventListener("click", (e) => {
       if (e.target.id === "overlay") finishFocus(false);
     });
-    $("#btn-home").addEventListener("click", goHome);
     $("#btn-undo").addEventListener("click", undo);
     $("#btn-redo").addEventListener("click", redo);
     $("#btn-ai").addEventListener("click", openAI);
@@ -1454,18 +1368,9 @@
         }
       }
     });
-    $("#user-add").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const name = String(fd.get("name") || "").trim();
-      const title = String(fd.get("title") || "").trim();
-      if (!name) return;
-      addUser(name, title);
-      e.target.reset();
-    });
   }
 
   loadStore();
   bind();
-  renderHome();
+  boot();
 })();
