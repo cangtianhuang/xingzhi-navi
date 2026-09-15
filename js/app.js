@@ -18,6 +18,7 @@
     clockTick: null,
     editor: null,
     treeOpen: false,
+    unblockId: null,
     searchList: [],
     searchActive: 0,
     users: [],
@@ -32,7 +33,7 @@
 
   // 是否有任意弹窗打开（撤销/重做、快捷键需要避让）
   function anyOverlayOpen() {
-    return ["#edit-overlay", "#overlay", "#ai-overlay", "#gen-overlay", "#search-overlay"].some((id) => {
+    return ["#edit-overlay", "#overlay", "#ai-overlay", "#gen-overlay", "#unblock-overlay", "#search-overlay"].some((id) => {
       const el = document.querySelector(id);
       return el && el.classList.contains("is-on");
     });
@@ -125,6 +126,7 @@
   // deps 全部完成的 waiting 叶子 → active（可以开始了）；依赖又回退则改回 waiting，级联直到稳定
   function reflowDeps() {
     const ov = overridesFor(state.userId);
+    const freed = [];
     for (let pass = 0; pass < 6; pass++) {
       const nodes = currentNodes();
       const map = MapU.byId(nodes);
@@ -140,7 +142,8 @@
           return dn && effStatus(dn, nodes) === "done";
         });
         if (st === "waiting" && ready) {
-          ov[n.id] = { ...(ov[n.id] || {}), status: "active", updatedAt: "可以开始了" };
+          ov[n.id] = { ...(ov[n.id] || {}), status: "active", updatedAt: "可以开始了", updatedTs: Date.now() };
+          freed.push(n.name);
           changed = true;
         } else if (st === "active" && !ready && n.updatedAt === "可以开始了") {
           // 之前是自动放行的（updatedAt 标记），现在依赖又没完成了 → 退回「在等前面的事」
@@ -150,6 +153,26 @@
       });
       if (!changed) break;
     }
+    _freed = freed;
+  }
+  let _freed = [];
+  // 依赖放行反馈：一件事做完后，把「可以开始了」的下游用轻提示说出来
+  function announceFreed() {
+    if (_freed && _freed.length) {
+      const names = _freed.slice(0, 3).map((n) => `《${n}》`).join("、");
+      showToast(`${names} 可以开始了`);
+    }
+    _freed = [];
+  }
+
+  let _toastTimer = null;
+  function showToast(text) {
+    const el = $("#toast");
+    if (!el || !text) return;
+    el.textContent = text;
+    el.classList.add("is-on");
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove("is-on"), 2600);
   }
 
   function logEntry(name, done) {
@@ -593,7 +616,8 @@
           <div class="ans-desc">${escapeXml(desc)}${eta}</div>
         </div>
         <div class="ans-actions">
-          ${sug.canAct ? `<button class="np-go" data-go="${node.id}">开始做</button>` : ""}
+          ${kind === "blocked" ? `<button class="np-go" data-unblock="${node.id}">解卡</button>` : ""}
+          ${kind !== "blocked" && sug.canAct ? `<button class="np-go" data-go="${node.id}">开始做</button>` : ""}
           ${isLeaf ? `<button class="ans-done" data-done="${node.id}" title="标记做完">✓ 做完</button>` : ""}
           <button class="np-open" data-open="${node.id}">去看看</button>
         </div>
@@ -691,6 +715,9 @@
     }
 
     [bBox, tBox, sBox].forEach((box) => {
+      box.querySelectorAll("[data-unblock]").forEach((btn) =>
+        btn.addEventListener("click", () => openUnblock(btn.getAttribute("data-unblock")))
+      );
       box.querySelectorAll("[data-go]").forEach((btn) =>
         btn.addEventListener("click", () => {
           const node = MapU.byId(nodes).get(btn.getAttribute("data-go"));
@@ -701,6 +728,7 @@
         btn.addEventListener("click", () => {
           setStatus(btn.getAttribute("data-done"), "done");
           renderApp();
+          announceFreed();
         })
       );
       box.querySelectorAll("[data-fresh]").forEach((btn) =>
@@ -898,6 +926,14 @@
     return { blocked: "!", active: "▶", flowing: "~", waiting: "…", done: "✓" }[st] || "·";
   }
 
+  // 容器节点的状态由哪个子项「决定」（按聚合优先级取最紧的一个），用于显性说明
+  function drivingChild(node, nodes) {
+    const kids = MapU.childrenOf(nodes, node.id).filter((k) => k.type !== "root");
+    if (!kids.length) return null;
+    const rank = { blocked: 0, active: 1, flowing: 2, waiting: 3, done: 9 };
+    return [...kids].sort((a, b) => (rank[effStatus(a, nodes)] ?? 5) - (rank[effStatus(b, nodes)] ?? 5))[0];
+  }
+
   function escapeXml(s) {
     return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -946,6 +982,11 @@
       <div class="detail-kicker">${typeLabel}${node.domain ? " · " + domainName(node.domain) : ""} · ${node.updatedAt || "—"}</div>
       <h3>${escapeXml(node.name)}</h3>
       <span class="badge ${st}"><span class="badge-glyph" aria-hidden="true">${escapeXml(glyphOf(st))}</span>${META.statusLabel[st] || "—"}</span>
+      ${
+        !isLeaf && drivingChild(node, nodesAll)
+          ? `<span class="agg-note">这个状态由下面的《${escapeXml(drivingChild(node, nodesAll).name)}》决定</span>`
+          : ""
+      }
       <div class="progress-row">
         <div class="meta"><b>${Math.round(pr * 100)}%</b> <span>现在的进度</span></div>
       </div>
@@ -967,6 +1008,7 @@
       <div class="block">
         <h4>卡在哪里</h4>
         <p>${blockers ? escapeXml(blockers) : st === "waiting" ? "它本身没问题，只是前面的事还没做完。" : "没有卡住的地方。"}</p>
+        ${st === "blocked" && canEdit ? `<button class="tool" id="btn-unblock" style="margin-top:10px">解卡 · 拆成能动的一步</button>` : ""}
       </div>
       <div class="block">
         <h4>在等什么</h4>
@@ -1017,6 +1059,8 @@
       });
     const aiStep = $("#btn-ai-step", el);
     if (aiStep) aiStep.addEventListener("click", () => aiSuggest(node, aiStep));
+    const unblockBtn = $("#btn-unblock", el);
+    if (unblockBtn) unblockBtn.addEventListener("click", () => openUnblock(node.id));
     const drill = $("#btn-drill", el);
     if (drill) {
       drill.addEventListener("click", () => {
@@ -1029,6 +1073,7 @@
         const to = b.dataset.set;
         setStatus(node.id, effStatus(node, nodesAll) === to ? "active" : to);
         renderApp();
+        announceFreed();
       });
     });
     const range = $("[data-prog]", el);
@@ -1040,6 +1085,7 @@
       range.addEventListener("change", () => {
         setProgress(node.id, Number(range.value) / 100);
         renderApp();
+        announceFreed();
       });
     }
     const addBtn = $("[data-add]", el);
@@ -1088,14 +1134,19 @@
   // done=true：这件事做完 → 推进为已完成，触发依赖重排；否则只记一笔暂停
   function finishFocus(done) {
     const sess = state.session;
+    let didDone = false;
     if (sess) {
       logEntry(sess.name || "一件事", done);
       // 只有叶子节点直接置完成；容器节点的状态由子节点派生，标完成没意义
       const isLeaf = MapU.childrenOf(currentNodes(), sess.nodeId).length === 0;
-      if (done && isLeaf) setStatus(sess.nodeId, "done");
+      if (done && isLeaf) {
+        setStatus(sess.nodeId, "done");
+        didDone = true;
+      }
     }
     closeFocus();
     if (state.view === "app") renderApp();
+    if (didDone) announceFreed();
   }
 
   function closeFocus() {
@@ -1357,6 +1408,7 @@
         state.selectedId = target.id;
         quickMsg(`已把《${target.name}》标记为做完`);
         renderApp();
+        announceFreed();
         return;
       }
       if (blockedRe.test(line)) {
@@ -1459,6 +1511,75 @@
       btn.textContent = old;
       alert("AI 生成失败：" + (err && err.message ? err.message : err));
     }
+  }
+
+  // —— 解卡流程：把「卡住了」从一个红点变成一次可执行的仪式 ——
+  function openUnblock(id) {
+    const node = MapU.byId(currentNodes()).get(id);
+    if (!node) return;
+    state.unblockId = id;
+    const form = $("#unblock-form");
+    form.reason.value = node.blockedReason || "";
+    form.step.value = explicitAction(node) || "";
+    $("#unblock-title").textContent = `解卡：${node.name}`;
+    $("#unblock-ai").style.display = NaviAI.isReady() ? "" : "none";
+    $("#unblock-overlay").classList.add("is-on");
+    form.reason.focus();
+  }
+
+  function closeUnblock() {
+    $("#unblock-overlay").classList.remove("is-on");
+    state.unblockId = null;
+  }
+
+  function submitUnblock(startNow) {
+    const id = state.unblockId;
+    if (!id) return;
+    const form = $("#unblock-form");
+    const reason = form.reason.value.trim();
+    const step = form.step.value.trim();
+    const fields = { blockedReason: reason };
+    if (step) fields.nextAction = step;
+    if (startNow) fields.status = "active"; // 把卡点拆成了能动的一步，就不再是「卡住」
+    editNode(id, fields);
+    closeUnblock();
+    if (startNow) {
+      const node = MapU.byId(currentNodes()).get(id);
+      renderApp();
+      if (node) openFocus(node);
+    } else {
+      renderApp();
+      showToast("解卡思路已记下");
+    }
+  }
+
+  async function unblockThink(btn) {
+    if (!NaviAI.isReady()) {
+      closeUnblock();
+      return openAI();
+    }
+    const node = MapU.byId(currentNodes()).get(state.unblockId);
+    if (!node) return;
+    const reason = $("#unblock-form").reason.value.trim();
+    const prompt =
+      `事情：${node.name}\n` +
+      `所属：${node.domain ? domainName(node.domain) : "—"}\n` +
+      `卡在：${reason || node.blockedReason || "（没写）"}\n` +
+      `请只给现在能立刻上手、拆掉这个卡点的第一步。`;
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "AI 想想…";
+    try {
+      const { action, hint } = await NaviAI.suggest(prompt);
+      if (action) {
+        $("#unblock-form").step.value = action;
+        if (hint) showToast(hint);
+      }
+    } catch (err) {
+      alert("AI 生成失败：" + (err && err.message ? err.message : err));
+    }
+    btn.disabled = false;
+    btn.textContent = old;
   }
 
   function renderApp() {
@@ -1580,6 +1701,16 @@
     $("#gen-overlay").addEventListener("click", (e) => {
       if (e.target.id === "gen-overlay") closeGen();
     });
+    $("#unblock-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitUnblock(true);
+    });
+    $("#unblock-save").addEventListener("click", () => submitUnblock(false));
+    $("#unblock-cancel").addEventListener("click", closeUnblock);
+    $("#unblock-ai").addEventListener("click", (e) => unblockThink(e.currentTarget));
+    $("#unblock-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "unblock-overlay") closeUnblock();
+    });
     $("#ai-form").addEventListener("submit", saveAI);
     $("#ai-clear").addEventListener("click", clearAI);
     $("#ai-cancel").addEventListener("click", closeAI);
@@ -1618,6 +1749,7 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         if ($("#search-overlay").classList.contains("is-on")) closeSearch();
+        else if ($("#unblock-overlay").classList.contains("is-on")) closeUnblock();
         else if ($("#gen-overlay").classList.contains("is-on")) closeGen();
         else if ($("#ai-overlay").classList.contains("is-on")) closeAI();
         else if ($("#edit-overlay").classList.contains("is-on")) closeEditor();

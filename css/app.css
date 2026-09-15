@@ -431,6 +431,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .badge.active .badge-glyph { background: var(--blue); }
 .badge.flowing .badge-glyph, .badge.done .badge-glyph { background: var(--sage); }
 .badge.waiting .badge-glyph { background: var(--wait); }
+.agg-note { display: inline-block; margin-left: 8px; font-size: 12px; color: var(--ink-3); }
 .badge.blocked { color: #a56b58; background: var(--rose-soft); }
 .badge.active { color: #5d6e82; background: var(--blue-soft); }
 .badge.flowing, .badge.done { color: #5d7a6c; background: var(--sage-soft); }
@@ -495,6 +496,26 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .focus-card p { color: var(--ink-2); font-size: 14px; line-height: 1.7; }
 .timer { font-family: var(--serif); font-size: 52px; text-align: center; margin: 20px 0 18px; }
 .empty { color: var(--ink-3); font-size: 14px; }
+
+/* 全局轻提示（依赖放行等） */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  box-shadow: 0 12px 30px -14px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 40;
+  max-width: 86vw;
+}
+.toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* 快速搜索（Cmd/Ctrl+K） */
 #search-overlay { align-items: flex-start; padding-top: 12vh; }
