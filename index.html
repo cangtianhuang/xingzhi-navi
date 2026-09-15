@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>行知 Navi</title>
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div id="view-home" class="view home">
+      <header class="home-head">
+        <div class="brand">
+          <span class="brand-mark">行知</span>
+          <span class="brand-sub">Navi</span>
+        </div>
+        <p class="home-lead">选一位成员，看看最近怎么样、下一步做什么。</p>
+      </header>
+      <ul class="user-list" id="user-list"></ul>
+      <form class="user-add" id="user-add">
+        <input name="name" maxlength="12" placeholder="姓名" required />
+        <input name="title" maxlength="20" placeholder="角色，比如 产品与研究" />
+        <button type="submit">添加成员</button>
+      </form>
+    </div>
+
+    <div id="view-app" class="view app is-hidden">
+      <header class="topbar">
+        <button class="back" id="btn-home">成员</button>
+        <div class="brand">
+          <span class="brand-mark">行知</span>
+          <span class="brand-sub">Navi</span>
+        </div>
+        <nav class="domains" id="domains" aria-label="领域"></nav>
+        <time class="dot-time" id="clock"></time>
+      </header>
+
+      <section class="hero">
+        <h1 id="greet-title">下午好。</h1>
+        <p id="greet-sub">看看现在怎么样，哪儿卡住了，然后做一件小事。</p>
+      </section>
+
+      <section class="workspace">
+        <div class="panel map-panel">
+          <div class="panel-hd">
+            <div class="crumbs" id="crumbs"></div>
+            <div class="filters">
+              <button class="chip" data-filter="all">全部</button>
+              <button class="chip is-on" data-filter="open">还没做完</button>
+              <button class="chip" data-filter="blocked">只看卡住的</button>
+            </div>
+          </div>
+          <div class="map-wrap">
+            <svg id="map-svg" role="img" aria-label="状态总览"></svg>
+          </div>
+        </div>
+        <aside class="panel detail">
+          <div class="detail-body" id="detail-body"></div>
+        </aside>
+      </section>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <div class="focus-card">
+        <div class="detail-kicker">开始做</div>
+        <h3 id="focus-title">正在做</h3>
+        <p id="focus-desc"></p>
+        <div class="timer" id="timer">25:00</div>
+        <div class="focus-actions">
+          <button class="cta" id="btn-done">做完了</button>
+          <button class="cta ghost" id="btn-stop">先到这儿，回去看看</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/data.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
