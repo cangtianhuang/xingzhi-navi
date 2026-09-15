@@ -251,6 +251,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 }
 .ans-item.is-blocked { border-left: 3px solid var(--rose); }
 .ans-item.is-today { border-left: 3px solid var(--sage); }
+.ans-item.is-stale { border-left: 3px solid var(--sand); }
+.ans-done {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #5d7a6c;
+  background: var(--sage-soft);
+}
+.ans-done:hover { filter: brightness(0.97); }
 .ans-main { flex: 1; min-width: 0; }
 .ans-name { font-weight: 600; font-size: 15px; }
 .ans-desc {
@@ -586,5 +595,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   .avatar.sand { color: #cfa976; }
   .avatar.lilac { color: #b5a3c6; }
   .user-del:hover { color: #dc9d86; }
+  .ans-done { color: #93b6a2; }
   .tool.danger:hover { color: #dc9d86; border-color: #5a4038; }
 }

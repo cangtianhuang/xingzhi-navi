@@ -116,7 +116,7 @@
   function setStatus(id, status) {
     pushUndo();
     const ov = overridesFor(state.userId);
-    ov[id] = { ...(ov[id] || {}), status, updatedAt: "刚刚" };
+    ov[id] = { ...(ov[id] || {}), status, updatedAt: "刚刚", updatedTs: Date.now() };
     if (status === "done") ov[id].progress = 1;
     reflowDeps();
     saveStore();
@@ -172,7 +172,7 @@
     pushUndo();
     const ov = overridesFor(state.userId);
     const p = Math.max(0, Math.min(1, ratio));
-    ov[id] = { ...(ov[id] || {}), progress: p, updatedAt: "刚刚" };
+    ov[id] = { ...(ov[id] || {}), progress: p, updatedAt: "刚刚", updatedTs: Date.now() };
     if (p >= 1) ov[id].status = "done";
     else if ((ov[id].status || "") === "done") ov[id].status = "active";
     reflowDeps();
@@ -222,6 +222,7 @@
     if (fields.status !== undefined) node.status = fields.status;
     if (fields.deps !== undefined) node.deps = fields.deps;
     node.updatedAt = "刚刚";
+    node.updatedTs = Date.now();
     // 编辑表单里的状态/进度是权威值，清掉可能盖在上面的快捷 override
     if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
     reflowDeps();
@@ -297,6 +298,7 @@
       if (sub.has(n.id)) n.domain = newDomain;
     });
     nd.updatedAt = "刚刚";
+    nd.updatedTs = Date.now();
     if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
     reflowDeps();
     saveStore();
@@ -584,6 +586,7 @@
     const sug = suggestFor(node, nodes);
     const desc = kind === "blocked" ? node.blockedReason || sug.text : sug.text;
     const eta = node.estimateMin ? ` · 约 ${node.estimateMin} 分钟` : "";
+    const isLeaf = MapU.childrenOf(nodes, node.id).length === 0;
     return `<div class="ans-item is-${kind}" data-id="${node.id}">
         <div class="ans-main">
           <div class="ans-name">${escapeXml(node.name)}</div>
@@ -591,9 +594,38 @@
         </div>
         <div class="ans-actions">
           ${sug.canAct ? `<button class="np-go" data-go="${node.id}">开始做</button>` : ""}
+          ${isLeaf ? `<button class="ans-done" data-done="${node.id}" title="标记做完">✓ 做完</button>` : ""}
           <button class="np-open" data-open="${node.id}">去看看</button>
         </div>
       </div>`;
+  }
+
+  const STALE_MS = 4 * 24 * 3600 * 1000;
+  function agoText(ts) {
+    const d = Math.floor((Date.now() - ts) / 86400000);
+    return d <= 1 ? "1 天多没动" : `${d} 天没动`;
+  }
+  // 好久没动的叶子：有真实更新时间戳且超过阈值、还没做完
+  function staleItems(nodes) {
+    const now = Date.now();
+    return nodes
+      .filter(
+        (n) =>
+          n.type === "task" &&
+          MapU.childrenOf(nodes, n.id).length === 0 &&
+          effStatus(n, nodes) !== "done" &&
+          typeof n.updatedTs === "number" &&
+          now - n.updatedTs > STALE_MS
+      )
+      .sort((a, b) => a.updatedTs - b.updatedTs);
+  }
+
+  // 确认某条仍然有效：只刷新它的更新时间，不进撤销栈（不是一次真的改动）
+  function confirmFresh(id) {
+    const ov = overridesFor(state.userId);
+    ov[id] = { ...(ov[id] || {}), updatedAt: "刚确认", updatedTs: Date.now() };
+    saveStore();
+    renderApp();
   }
 
   function renderAnswer(nodes) {
@@ -631,12 +663,48 @@
         ? today.slice(0, 6).map((n) => ansItemHTML(n, nodes, "today")).join("")
         : `<div class="ans-empty">没有能今天顺手做完的小事。</div>`);
 
-    [bBox, tBox].forEach((box) => {
+    // 好久没动的——只在真的出现时显示，一键确认或去更新
+    const stale = staleItems(nodes);
+    const sBox = $("#ans-stale");
+    if (stale.length) {
+      sBox.style.display = "";
+      sBox.innerHTML =
+        `<div class="ans-h">好久没动的 · 还准吗？</div>` +
+        stale
+          .slice(0, 5)
+          .map(
+            (n) => `<div class="ans-item is-stale" data-id="${n.id}">
+              <div class="ans-main">
+                <div class="ans-name">${escapeXml(n.name)}</div>
+                <div class="ans-desc">${agoText(n.updatedTs)} · ${META.statusLabel[effStatus(n, nodes)] || ""}</div>
+              </div>
+              <div class="ans-actions">
+                <button class="np-open" data-fresh="${n.id}">还准</button>
+                <button class="np-open" data-open="${n.id}">更新一下</button>
+              </div>
+            </div>`
+          )
+          .join("");
+    } else {
+      sBox.style.display = "none";
+      sBox.innerHTML = "";
+    }
+
+    [bBox, tBox, sBox].forEach((box) => {
       box.querySelectorAll("[data-go]").forEach((btn) =>
         btn.addEventListener("click", () => {
           const node = MapU.byId(nodes).get(btn.getAttribute("data-go"));
           if (node) openFocus(node);
         })
+      );
+      box.querySelectorAll("[data-done]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          setStatus(btn.getAttribute("data-done"), "done");
+          renderApp();
+        })
+      );
+      box.querySelectorAll("[data-fresh]").forEach((btn) =>
+        btn.addEventListener("click", () => confirmFresh(btn.getAttribute("data-fresh")))
       );
       box.querySelectorAll("[data-open]").forEach((btn) =>
         btn.addEventListener("click", () => jumpToTree(btn.getAttribute("data-open")))
