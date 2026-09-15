@@ -510,11 +510,20 @@
     $("#clock").textContent = clock;
     $("#greet-title").textContent = `${greet}，${data.user.name}`;
     const doneCount = todayLog().filter((e) => e.done).length;
-    const doneLine = doneCount ? `　今天已经做完 <em>${doneCount}</em> 件。` : "";
-    $("#greet-sub").innerHTML =
-      open.length === 0
-        ? "状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。"
-        : `现在有 <em>${open.length}</em> 件事还没做完，其中 <em>${blocked.length}</em> 件卡住了。${doneLine}`;
+    const doneLine = doneCount ? `今天已经做完 <em>${doneCount}</em> 件。` : "";
+    // 立意：首屏先讲「卡在哪 / 下一步」，不报「还剩多少没做」这种待办计数
+    const pick = topPick(data.nodes);
+    let lead;
+    if (open.length === 0) {
+      lead = "状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。";
+    } else if (blocked.length) {
+      lead = `<em>${blocked.length}</em> 件卡住了，最该先解开《${escapeXml(blocked[0].name)}》。`;
+    } else if (pick) {
+      lead = `没有卡住的，顺着做《${escapeXml(pick.name)}》就好。`;
+    } else {
+      lead = "手上没有待办了，喘口气。";
+    }
+    $("#greet-sub").innerHTML = doneLine ? `${lead} <span class="sub-done">${doneLine}</span>` : lead;
 
     renderNowPick(data.nodes);
 

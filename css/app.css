@@ -178,6 +178,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 }
 .hero p { margin-top: 6px; color: var(--ink-2); font-size: 14px; line-height: 1.7; }
 .hero p em { font-style: normal; color: var(--rose); font-weight: 600; }
+.hero .sub-done { color: var(--ink-3); font-size: 13px; }
+.hero .sub-done em { color: var(--ink-2); }
 
 /* 首屏「现在最该做的一件事」——首屏视觉焦点 */
 .now-pick {
