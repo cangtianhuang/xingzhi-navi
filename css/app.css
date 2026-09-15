@@ -158,6 +158,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 }
 .domain-card.is-on { background: rgba(255,255,255,0.8); color: var(--ink); }
 .dot-time { margin-left: auto; font-size: 13px; color: var(--ink-3); }
+.undo { margin-left: auto; }
+.undo + .dot-time { margin-left: 14px; }
 
 .hero { max-width: 680px; }
 .hero h1 {

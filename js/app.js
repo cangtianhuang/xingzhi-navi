@@ -22,6 +22,7 @@
     extraNodes: {},
     overrides: {},
     log: {},
+    undo: {},
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -102,6 +103,7 @@
 
   // 把一个节点推进到新状态，并把依赖它的 waiting 节点自动放行
   function setStatus(id, status) {
+    pushUndo();
     const ov = overridesFor(state.userId);
     ov[id] = { ...(ov[id] || {}), status, updatedAt: "刚刚" };
     if (status === "done") ov[id].progress = 1;
@@ -148,6 +150,7 @@
 
   // —— 结构化编辑：新建 / 修改 / 删除节点 ——
   function setProgress(id, ratio) {
+    pushUndo();
     const ov = overridesFor(state.userId);
     const p = Math.max(0, Math.min(1, ratio));
     ov[id] = { ...(ov[id] || {}), progress: p, updatedAt: "刚刚" };
@@ -162,6 +165,7 @@
   }
 
   function addNode(parentId, fields) {
+    pushUndo();
     const nodes = ensureEditable(state.userId);
     const parent = nodes.find((n) => n.id === parentId);
     if (!parent) return null;
@@ -188,6 +192,7 @@
   }
 
   function editNode(id, fields) {
+    pushUndo();
     const nodes = ensureEditable(state.userId);
     const node = nodes.find((n) => n.id === id);
     if (!node) return;
@@ -205,6 +210,7 @@
   }
 
   function deleteNode(id) {
+    pushUndo();
     const nodes = ensureEditable(state.userId);
     const doomed = new Set([id]);
     let grew = true;
@@ -241,6 +247,82 @@
       });
     }
     return nodes.filter((n) => !sub.has(n.id) && (n.type === "task" || n.type === "project"));
+  }
+
+  // —— 规则建议引擎：让「下一步」名副其实 ——
+  // 节点自己填了下一步就用它；没填就按状态 / 依赖 / 子节点推断一条。
+  const PLACEHOLDER_ACTIONS = ["暂时不用管", "等访谈结束再动笔", ""];
+
+  function explicitAction(node) {
+    return node && node.nextAction && !PLACEHOLDER_ACTIONS.includes(node.nextAction) ? node.nextAction : "";
+  }
+
+  function suggestFor(node, nodes) {
+    if (!node) return { text: "先点开图上任意一张卡片。", canAct: false, derived: false };
+    const st = effStatus(node, nodes);
+    const explicit = explicitAction(node);
+    if (st === "done") return { text: explicit || "已经做完了，不用再动。", canAct: false, derived: !explicit };
+
+    const map = MapU.byId(nodes);
+    const deps = (node.deps || []).map((d) => map.get(d)).filter(Boolean);
+    const pendingDeps = deps.filter((d) => effStatus(d, nodes) !== "done");
+    if (st === "waiting" && pendingDeps.length) {
+      return {
+        text: explicit || `先做完前面的：${pendingDeps.map((d) => d.name).join("、")}`,
+        canAct: false,
+        derived: !explicit,
+        drillTo: pendingDeps[0].id,
+      };
+    }
+
+    const kids = MapU.childrenOf(nodes, node.id).filter((k) => k.type !== "root");
+    if (kids.length) {
+      const rank = { blocked: 0, active: 1, flowing: 2, waiting: 3, done: 9 };
+      const hot = [...kids].sort((a, b) => (rank[effStatus(a, nodes)] ?? 5) - (rank[effStatus(b, nodes)] ?? 5))[0];
+      const sub = suggestFor(hot, nodes);
+      return { text: explicit || `先推进「${hot.name}」：${sub.text}`, canAct: false, derived: !explicit, drillTo: hot.id };
+    }
+
+    if (st === "blocked") {
+      const base = node.blockedReason ? `先拆掉卡点：${node.blockedReason}` : "想清楚是什么卡住了，写下能动的第一步。";
+      return { text: explicit || base, canAct: true, derived: !explicit };
+    }
+    return { text: explicit || `花 ${node.estimateMin || 15} 分钟往前推一步。`, canAct: true, derived: !explicit };
+  }
+
+  // —— 撤销：每次改动前存一份该成员的快照 ——
+  function snapshot() {
+    const uid = state.userId;
+    return JSON.stringify({ e: state.extraNodes[uid] || null, o: state.overrides[uid] || null });
+  }
+
+  function pushUndo() {
+    const uid = state.userId;
+    if (!uid) return;
+    if (!state.undo[uid]) state.undo[uid] = [];
+    state.undo[uid].push(snapshot());
+    if (state.undo[uid].length > 40) state.undo[uid].shift();
+  }
+
+  function canUndo() {
+    return !!(state.undo[state.userId] && state.undo[state.userId].length);
+  }
+
+  function undo() {
+    const uid = state.userId;
+    if (!canUndo()) return;
+    const snap = JSON.parse(state.undo[uid].pop());
+    if (snap.e) state.extraNodes[uid] = snap.e;
+    else delete state.extraNodes[uid];
+    if (snap.o) state.overrides[uid] = snap.o;
+    else delete state.overrides[uid];
+    // 撤销后当前选中的节点可能已不存在
+    const nodes = currentNodes();
+    if (!MapU.byId(nodes).get(state.selectedId)) {
+      state.selectedId = nodes.find((n) => n.type !== "root")?.id || "root";
+    }
+    saveStore();
+    renderApp();
   }
 
   function nowParts() {
@@ -387,13 +469,13 @@
     return { blocked, open };
   }
 
-  // 现在最该动手的一件事：卡住且有下一步 > 正在做 > 其它可做的；同级里挑最快能推进的
+  // 现在最该动手的一件事：卡住 > 正在做 > 其它可做的；只挑真正能上手（叶子）的一件
   function topPick(nodes) {
     const rank = { blocked: 0, active: 1, flowing: 2, waiting: 3, done: 9 };
     const actionable = nodes
       .filter((n) => n.type === "task" || n.type === "project")
-      .filter((n) => n.nextAction && n.nextAction !== "暂时不用管" && n.nextAction !== "等访谈结束再动笔")
-      .filter((n) => effStatus(n, nodes) !== "done" && effStatus(n, nodes) !== "waiting");
+      .filter((n) => effStatus(n, nodes) !== "done" && effStatus(n, nodes) !== "waiting")
+      .filter((n) => suggestFor(n, nodes).canAct);
     if (!actionable.length) return null;
     actionable.sort((a, b) => {
       const ra = rank[effStatus(a, nodes)] ?? 5;
@@ -457,10 +539,11 @@
       return;
     }
     const st = effStatus(pick, nodes);
+    const sug = suggestFor(pick, nodes);
     box.className = "now-pick" + (st === "blocked" ? " is-blocked" : "");
     box.innerHTML = `
-      <span class="np-kicker">现在最该做的一件事 · <b>${escapeXml(pick.name)}</b> · ${META.statusLabel[st] || ""}</span>
-      <h2>${escapeXml(pick.nextAction)}</h2>
+      <span class="np-kicker">现在最该做的一件事 · <b>${escapeXml(pick.name)}</b> · ${META.statusLabel[st] || ""}${sug.derived ? " · 据状态推断" : ""}</span>
+      <h2>${escapeXml(sug.text)}</h2>
       <div class="np-row">
         <span class="np-eta">${pick.estimateMin ? "大约 " + pick.estimateMin + " 分钟" : "看情况"}</span>
         <span class="np-actions">
@@ -586,7 +669,8 @@
     const blockers = node.blockedReason;
     const isLeaf = MapU.childrenOf(nodesAll, node.id).length === 0;
     const canSet = isLeaf && (node.type === "task" || node.type === "project");
-    const canStart = st !== "done" && node.nextAction && node.nextAction !== "暂时不用管";
+    const sug = suggestFor(node, nodesAll);
+    const canStart = sug.canAct;
     const setRow = canSet
       ? `<div class="set-status" role="group" aria-label="改状态">
            ${["blocked", "active", "done"]
@@ -618,11 +702,11 @@
       ${progControl}
       ${setRow}
       <div class="suggest">
-        <div class="ai-tag">下一步</div>
-        <h5>${escapeXml(node.nextAction || "先点开下面卡住的那一项")}</h5>
+        <div class="ai-tag">下一步${sug.derived ? " · 据状态推断" : ""}</div>
+        <h5>${escapeXml(sug.text)}</h5>
         <div class="eta">${node.estimateMin ? "大约要 " + node.estimateMin + " 分钟" : "具体多久，看是哪件事"}</div>
         ${node.nextHint ? `<p class="hint">${escapeXml(node.nextHint)}</p>` : ""}
-        <button class="cta" id="btn-start" ${canStart ? "" : "disabled"}>${canStart ? "开始做" : "暂时不用做"}</button>
+        <button class="cta" id="btn-start" ${canStart ? "" : "disabled"}>${canStart ? "开始做" : sug.drillTo ? "去看看里面" : "暂时不用做"}</button>
         ${node.type !== "task" && node.type !== "root" ? `<button class="cta ghost" id="btn-drill">看看里面有什么</button>` : ""}
       </div>
       <div class="block">
@@ -708,7 +792,7 @@
   function openFocus(node) {
     const mins = node.estimateMin || 25;
     state.session = { left: mins * 60, nodeId: node.id, name: node.name };
-    $("#focus-title").textContent = node.nextAction;
+    $("#focus-title").textContent = suggestFor(node, currentNodes()).text;
     $("#focus-desc").textContent = node.nextHint || node.brief || "";
     $("#overlay").classList.add("is-on");
     tickTimer();
@@ -751,6 +835,8 @@
     renderHero();
     renderMap();
     renderDetail();
+    const ub = $("#btn-undo");
+    if (ub) ub.classList.toggle("is-hidden", !canUndo());
   }
 
   // —— 编辑弹窗 ——
@@ -841,6 +927,7 @@
       if (e.target.id === "overlay") finishFocus(false);
     });
     $("#btn-home").addEventListener("click", goHome);
+    $("#btn-undo").addEventListener("click", undo);
     $("#edit-form").addEventListener("submit", submitEditor);
     $("#edit-cancel").addEventListener("click", closeEditor);
     $("#edit-overlay").addEventListener("click", (e) => {
@@ -850,6 +937,13 @@
       if (e.key === "Escape") {
         if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
         else if ($("#overlay").classList.contains("is-on")) finishFocus(false);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && state.view === "app") {
+        const overlayOpen = $("#edit-overlay").classList.contains("is-on") || $("#overlay").classList.contains("is-on");
+        if (!overlayOpen && canUndo()) {
+          e.preventDefault();
+          undo();
+        }
       }
     });
     $("#user-add").addEventListener("submit", (e) => {
