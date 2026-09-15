@@ -36,6 +36,16 @@
       if (filter === "blocked") {
         return statusOf(n, nodes) === "blocked" || hasDesc(nodes, n.id, (x) => statusOf(x, nodes) === "blocked");
       }
+      if (filter === "today") {
+        // 能今天做完：可上手的叶子（未完成、有预计耗时且 ≤30 分钟），连带其祖先保持树结构
+        const quick = (x) => {
+          if (childrenOf(nodes, x.id).length) return false;
+          if (statusOf(x, nodes) === "done" || statusOf(x, nodes) === "waiting") return false;
+          const e = x.estimateMin || 0;
+          return e > 0 && e <= 30;
+        };
+        return quick(n) || hasDesc(nodes, n.id, quick);
+      }
       if (filter === "open") {
         return (
           n.type === "domain" ||

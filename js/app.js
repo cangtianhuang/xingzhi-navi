@@ -18,6 +18,8 @@
     tick: null,
     clockTick: null,
     editor: null,
+    searchList: [],
+    searchActive: 0,
     users: [],
     extraNodes: {},
     overrides: {},
@@ -27,6 +29,14 @@
   };
 
   const $ = (s, el = document) => el.querySelector(s);
+
+  // 是否有任意弹窗打开（撤销/重做、快捷键需要避让）
+  function anyOverlayOpen() {
+    return ["#edit-overlay", "#overlay", "#ai-overlay", "#gen-overlay", "#search-overlay"].some((id) => {
+      const el = document.querySelector(id);
+      return el && el.classList.contains("is-on");
+    });
+  }
 
   function loadStore() {
     try {
@@ -406,7 +416,8 @@
   function nowParts() {
     const d = new Date();
     const h = d.getHours();
-    const greet = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 13 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
+    const greet =
+      h < 5 ? "夜深了" : h < 9 ? "早上好" : h < 12 ? "上午好" : h < 14 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
     const wk = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
     const p2 = (n) => String(n).padStart(2, "0");
     const day = `${d.getMonth() + 1}月${d.getDate()}日`;
@@ -587,7 +598,7 @@
     const doneLine = doneCount ? `　今天已经做完 <em>${doneCount}</em> 件。` : "";
     $("#greet-sub").innerHTML =
       open.length === 0
-        ? "状态图还是空的。先写一件最近想做完的事吧。"
+        ? "状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。"
         : `现在有 <em>${open.length}</em> 件事还没做完，其中 <em>${blocked.length}</em> 件卡住了。${doneLine}`;
 
     renderNowPick(data.nodes);
@@ -629,7 +640,7 @@
     const sug = suggestFor(pick, nodes);
     box.className = "now-pick" + (st === "blocked" ? " is-blocked" : "");
     box.innerHTML = `
-      <span class="np-kicker">现在最该做的一件事 · <b>${escapeXml(pick.name)}</b> · ${META.statusLabel[st] || ""}${sug.derived ? " · 据状态推断" : ""}</span>
+      <span class="np-kicker">现在最该做的一件事 · <b>${escapeXml(pick.name)}</b> · ${META.statusLabel[st] || ""}${sug.derived ? " · 帮你想的" : ""}</span>
       <h2>${escapeXml(sug.text)}</h2>
       <div class="np-row">
         <span class="np-eta">${pick.estimateMin ? "大约 " + pick.estimateMin + " 分钟" : "看情况"}</span>
@@ -711,14 +722,20 @@
         <g class="node-card${state.selectedId === n.id ? " is-sel" : ""}${st === "blocked" ? " is-blocked" : ""}${st === "done" ? " is-done" : ""}"
            data-id="${n.id}" tabindex="0" role="button" aria-label="${aria}" transform="translate(${p.x}, ${p.y})">
           <rect class="plate" rx="12" width="${p.w}" height="${p.h}" />
-          <circle cx="16" cy="29" r="4.5" fill="${colorOf(st)}" />
-          <text class="node-title" x="28" y="25">${escapeXml(n.name)}</text>
-          <text class="node-sub" x="28" y="42">${label} · ${Math.round(pr * 100)}%</text>
+          <circle cx="18" cy="29" r="7" fill="${colorOf(st)}" />
+          <text class="node-glyph" x="18" y="29" text-anchor="middle" dominant-baseline="central">${escapeXml(glyphOf(st))}</text>
+          <text class="node-title" x="33" y="25">${escapeXml(n.name)}</text>
+          <text class="node-sub" x="33" y="42">${label} · ${Math.round(pr * 100)}%</text>
         </g>`;
     });
 
-    svg.setAttribute("viewBox", `0 0 ${Math.max(width, 640)} ${Math.max(height, 360)}`);
+    const vbW = Math.max(width, 640);
+    const vbH = Math.max(height, 360);
+    svg.setAttribute("viewBox", `0 0 ${vbW} ${vbH}`);
     svg.setAttribute("preserveAspectRatio", "xMinYMin meet");
+    // 给出自然像素尺寸：树大了就在面板内滚动（可读），而不是一味缩小挤成一团
+    svg.setAttribute("width", vbW);
+    svg.setAttribute("height", vbH);
     svg.innerHTML = `<g class="links">${links}</g><g class="nodes">${cards}</g>`;
     svg.querySelectorAll(".node-card").forEach((g) => {
       const id = g.getAttribute("data-id");
@@ -809,6 +826,11 @@
     return { blocked: "#c98972", active: "#7d8ea3", flowing: "#7d9a8a", waiting: "#9a8aa8", done: "#b5c1b8" }[st] || "#b5aea6";
   }
 
+  // 状态的形状/符号冗余：不只靠颜色区分，色盲用户也能一眼分辨
+  function glyphOf(st) {
+    return { blocked: "!", active: "▶", flowing: "~", waiting: "…", done: "✓" }[st] || "·";
+  }
+
   function escapeXml(s) {
     return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -825,6 +847,8 @@
     const pr = MapU.progressOf(node, nodesAll);
     const typeLabel = { root: "总览", domain: "领域", project: "项目", task: "具体的事" }[node.type] || "";
     const deps = (node.deps || []).map((id) => MapU.byId(nodesAll).get(id)).filter(Boolean);
+    // 反向依赖：哪些事在等着「我」做完（我一完成，它们就被放行）
+    const dependents = nodesAll.filter((n) => (n.deps || []).includes(node.id));
     const blockers = node.blockedReason;
     const isLeaf = MapU.childrenOf(nodesAll, node.id).length === 0;
     const canSet = isLeaf && (node.type === "task" || node.type === "project");
@@ -854,14 +878,14 @@
     el.innerHTML = `
       <div class="detail-kicker">${typeLabel}${node.domain ? " · " + domainName(node.domain) : ""} · ${node.updatedAt || "—"}</div>
       <h3>${escapeXml(node.name)}</h3>
-      <span class="badge ${st}">${META.statusLabel[st] || "—"}</span>
+      <span class="badge ${st}"><span class="badge-glyph" aria-hidden="true">${escapeXml(glyphOf(st))}</span>${META.statusLabel[st] || "—"}</span>
       <div class="progress-row">
         <div class="meta"><b>${Math.round(pr * 100)}%</b> <span>现在的进度</span></div>
       </div>
       ${progControl}
       ${setRow}
       <div class="suggest">
-        <div class="ai-tag">下一步${sug.derived ? " · 据状态推断" : ""}</div>
+        <div class="ai-tag">下一步${sug.derived ? " · 帮你想的" : ""}</div>
         <h5>${escapeXml(sug.text)}</h5>
         <div class="eta">${node.estimateMin ? "大约要 " + node.estimateMin + " 分钟" : "具体多久，看是哪件事"}</div>
         ${node.nextHint ? `<p class="hint">${escapeXml(node.nextHint)}</p>` : ""}
@@ -890,6 +914,19 @@
             : `<p class="empty">不依赖别的节点。</p>`
         }
       </div>
+      ${
+        dependents.length
+          ? `<div class="block">
+        <h4>完成后将放行</h4>
+        ${dependents
+          .map((d) => {
+            const ds = MapU.statusOf(d, nodesAll);
+            return `<div class="dep-item" data-id="${d.id}"><span class="dn">${escapeXml(d.name)}</span><span class="ds">${META.statusLabel[ds]}</span></div>`;
+          })
+          .join("")}
+      </div>`
+          : ""
+      }
       ${tools}
     `;
 
@@ -1000,6 +1037,73 @@
     state.session = null;
   }
 
+  // —— 快速搜索（Cmd/Ctrl+K）：按名称/现状找节点并跳过去 ——
+  function openSearch() {
+    if (state.view !== "app") return;
+    state.searchList = [];
+    state.searchActive = 0;
+    $("#search-overlay").classList.add("is-on");
+    const input = $("#search-input");
+    input.value = "";
+    renderSearchResults("");
+    input.focus();
+  }
+
+  function closeSearch() {
+    $("#search-overlay").classList.remove("is-on");
+  }
+
+  function nodePath(id) {
+    return ancestors(id)
+      .filter((n) => n.id !== "root" && n.id !== id)
+      .map((n) => n.name)
+      .join(" › ");
+  }
+
+  function renderSearchResults(q) {
+    const nodes = currentNodes();
+    const ql = String(q || "").trim().toLowerCase();
+    let list = nodes.filter((n) => n.type !== "root");
+    if (ql) {
+      list = list.filter(
+        (n) => (n.name || "").toLowerCase().includes(ql) || (n.brief || "").toLowerCase().includes(ql)
+      );
+    }
+    list = list.slice(0, 40);
+    state.searchList = list;
+    if (state.searchActive >= list.length) state.searchActive = 0;
+    const box = $("#search-results");
+    if (!list.length) {
+      box.innerHTML = `<li class="search-empty">没找到匹配的事项。</li>`;
+      return;
+    }
+    box.innerHTML = list
+      .map((n, i) => {
+        const st = MapU.statusOf(n, nodes);
+        const path = nodePath(n.id);
+        return `<li class="${i === state.searchActive ? "is-active" : ""}" data-id="${n.id}" data-i="${i}">
+          <span class="sr-glyph" style="background:${colorOf(st)}">${escapeXml(glyphOf(st))}</span>
+          <span class="sr-name">${escapeXml(n.name)}</span>
+          <span class="sr-path">${escapeXml(path || META.statusLabel[st] || "")}</span>
+        </li>`;
+      })
+      .join("");
+    box.querySelectorAll("li[data-id]").forEach((li) => {
+      li.addEventListener("click", () => jumpTo(li.getAttribute("data-id")));
+    });
+  }
+
+  function jumpTo(id) {
+    const nodes = currentNodes();
+    const node = MapU.byId(nodes).get(id);
+    if (!node) return;
+    state.selectedId = id;
+    state.focusId = node.parentId && node.parentId !== "root" ? node.parentId : "root";
+    closeSearch();
+    renderMap();
+    renderDetail();
+  }
+
   // —— AI 设置弹窗（OneAPI / OpenAI 兼容） ——
   function openAI() {
     const c = NaviAI.getConfig();
@@ -1014,6 +1118,117 @@
 
   function closeAI() {
     $("#ai-overlay").classList.remove("is-on");
+  }
+
+  // —— AI 建图：把一段近况文字批量拆成节点 ——
+  function openGen() {
+    if (state.view !== "app") return;
+    const form = $("#gen-form");
+    form.reset();
+    $("#gen-overlay").classList.add("is-on");
+    form.text.focus();
+  }
+
+  function closeGen() {
+    $("#gen-overlay").classList.remove("is-on");
+  }
+
+  // 把模型给的结构化条目落到当前成员的图上（一次改动一份撤销快照）
+  function applyPlan(items) {
+    const validDomains = META.domains.map((d) => d.id);
+    const nodes = ensureEditable(state.userId);
+    const ensureProject = (domId, name) => {
+      let p = nodes.find((n) => n.parentId === domId && n.type === "project" && n.name === name);
+      if (!p) {
+        p = {
+          id: newId("project"),
+          parentId: domId,
+          name: name.slice(0, 40),
+          type: "project",
+          domain: domId,
+          progress: 0,
+          status: "active",
+          brief: "",
+          nextAction: "",
+          nextHint: "",
+          estimateMin: 0,
+          deps: [],
+          updatedAt: "刚刚",
+        };
+        nodes.push(p);
+      }
+      return p;
+    };
+    let added = 0;
+    let firstId = null;
+    items.forEach((it) => {
+      if (!it || typeof it !== "object") return;
+      const domId = validDomains.includes(it.domain) ? it.domain : "work";
+      if (!nodes.find((n) => n.id === domId)) return; // 领域节点必须存在
+      const proj = ensureProject(domId, String(it.project || "新项目").trim() || "新项目");
+      const taskName = String(it.task || "").trim();
+      if (!taskName) return;
+      if (nodes.find((n) => n.parentId === proj.id && n.name === taskName)) return; // 去重
+      const node = {
+        id: newId("task"),
+        parentId: proj.id,
+        name: taskName.slice(0, 40),
+        type: "task",
+        domain: domId,
+        progress: 0,
+        status: "active",
+        brief: String(it.brief || "").slice(0, 160),
+        nextAction: String(it.nextAction || "").slice(0, 60),
+        nextHint: "",
+        estimateMin: Number(it.estimateMin) || 0,
+        deps: [],
+        updatedAt: "刚刚",
+      };
+      nodes.push(node);
+      if (!firstId) firstId = node.id;
+      added += 1;
+    });
+    return { added, firstId };
+  }
+
+  async function runGen(e) {
+    e.preventDefault();
+    if (!NaviAI.isReady()) {
+      closeGen();
+      return openAI();
+    }
+    const btn = $("#gen-run");
+    const text = $("#gen-form").text.value.trim();
+    if (!text) return;
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "AI 梳理中…";
+    try {
+      const items = await NaviAI.plan(text);
+      if (!items.length) throw new Error("没能从这段文字里拆出条目，换个说法再试试");
+      pushUndo();
+      const { added, firstId } = applyPlan(items);
+      if (!added) {
+        // 没有实际新增，撤销刚压入的空快照
+        if (state.undo[state.userId]) state.undo[state.userId].pop();
+        throw new Error("没有可添加的新条目（可能都已存在）");
+      }
+      reflowDeps();
+      saveStore();
+      if (firstId) {
+        state.selectedId = firstId;
+        const t = MapU.byId(currentNodes()).get(firstId);
+        if (t && t.parentId) state.focusId = t.parentId === "root" ? "root" : t.parentId;
+      }
+      btn.disabled = false;
+      btn.textContent = old;
+      closeGen();
+      renderApp();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = old;
+      alert("AI 建图失败：" + (err && err.message ? err.message : err));
+    }
   }
 
   function saveAI(e) {
@@ -1168,11 +1383,42 @@
     $("#btn-undo").addEventListener("click", undo);
     $("#btn-redo").addEventListener("click", redo);
     $("#btn-ai").addEventListener("click", openAI);
+    $("#btn-search").addEventListener("click", openSearch);
+    $("#btn-gen").addEventListener("click", openGen);
+    $("#gen-form").addEventListener("submit", runGen);
+    $("#gen-cancel").addEventListener("click", closeGen);
+    $("#gen-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "gen-overlay") closeGen();
+    });
     $("#ai-form").addEventListener("submit", saveAI);
     $("#ai-clear").addEventListener("click", clearAI);
     $("#ai-cancel").addEventListener("click", closeAI);
     $("#ai-overlay").addEventListener("click", (e) => {
       if (e.target.id === "ai-overlay") closeAI();
+    });
+    $("#search-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "search-overlay") closeSearch();
+    });
+    const searchInput = $("#search-input");
+    searchInput.addEventListener("input", () => {
+      state.searchActive = 0;
+      renderSearchResults(searchInput.value);
+    });
+    searchInput.addEventListener("keydown", (e) => {
+      const n = (state.searchList || []).length;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (n) state.searchActive = (state.searchActive + 1) % n;
+        renderSearchResults(searchInput.value);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (n) state.searchActive = (state.searchActive - 1 + n) % n;
+        renderSearchResults(searchInput.value);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = (state.searchList || [])[state.searchActive];
+        if (pick) jumpTo(pick.id);
+      }
     });
     $("#edit-form").addEventListener("submit", submitEditor);
     $("#edit-cancel").addEventListener("click", closeEditor);
@@ -1181,16 +1427,19 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        if ($("#ai-overlay").classList.contains("is-on")) closeAI();
+        if ($("#search-overlay").classList.contains("is-on")) closeSearch();
+        else if ($("#gen-overlay").classList.contains("is-on")) closeGen();
+        else if ($("#ai-overlay").classList.contains("is-on")) closeAI();
         else if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
         else if ($("#overlay").classList.contains("is-on")) finishFocus(false);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && state.view === "app") {
+        e.preventDefault();
+        if ($("#search-overlay").classList.contains("is-on")) closeSearch();
+        else openSearch();
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && state.view === "app") {
-        const overlayOpen =
-          $("#edit-overlay").classList.contains("is-on") ||
-          $("#overlay").classList.contains("is-on") ||
-          $("#ai-overlay").classList.contains("is-on");
-        if (overlayOpen) return;
+        if (anyOverlayOpen()) return;
         e.preventDefault();
         if (e.shiftKey) {
           if (canRedo()) redo();
@@ -1199,11 +1448,7 @@
         }
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y" && state.view === "app") {
-        const overlayOpen =
-          $("#edit-overlay").classList.contains("is-on") ||
-          $("#overlay").classList.contains("is-on") ||
-          $("#ai-overlay").classList.contains("is-on");
-        if (!overlayOpen && canRedo()) {
+        if (!anyOverlayOpen() && canRedo()) {
           e.preventDefault();
           redo();
         }

@@ -78,5 +78,54 @@ window.NaviAI = (function () {
     return { action: lines[0] || raw, hint: lines[1] || "" };
   }
 
-  return { getConfig, setConfig, isReady, suggest, DEFAULT_URL, DEFAULT_MODEL };
+  // 把一段自由文字拆成结构化条目（用于批量建图）
+  async function plan(text) {
+    const c = getConfig();
+    if (!c.apiKey) throw new Error("还没填 API Key");
+    const sys =
+      "你是任务梳理助手。用户给你一段关于近况 / 待办的中文文字，你把它拆成结构化条目。" +
+      "只输出一个 JSON 数组，不要多余文字，不要代码块围栏。" +
+      '每项形如 {"domain":"work","project":"项目名","task":"具体的一件事","brief":"一句现状（可空）","nextAction":"下一步动作（可空，动词开头）","estimateMin":30}。' +
+      "domain 必须四选一：work（工作）/ study（学习）/ life（生活）/ proj（项目）。" +
+      "task 是最小可执行的一件事，一句话；同一 project 可以有多条 task 拆成多项。" +
+      "estimateMin 是预计分钟的数字，拿不准就给 25。最多输出 20 项。";
+    const res = await fetch(endpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + c.apiKey },
+      body: JSON.stringify({
+        model: c.model || DEFAULT_MODEL,
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: String(text || "").slice(0, 2000) },
+        ],
+        temperature: 0.4,
+        max_tokens: 1200,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error("请求失败 HTTP " + res.status + (body ? "：" + body.slice(0, 160) : ""));
+    }
+    const data = await res.json();
+    const txt = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+    return parseArray(txt);
+  }
+
+  // 从模型输出里取出 JSON 数组，容忍代码块围栏
+  function parseArray(text) {
+    let raw = String(text || "").replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+    const s = raw.indexOf("[");
+    const e = raw.lastIndexOf("]");
+    if (s >= 0 && e > s) {
+      try {
+        const arr = JSON.parse(raw.slice(s, e + 1));
+        return Array.isArray(arr) ? arr : [];
+      } catch (err) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  return { getConfig, setConfig, isReady, suggest, plan, DEFAULT_URL, DEFAULT_MODEL };
 })();

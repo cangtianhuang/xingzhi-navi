@@ -13,7 +13,7 @@
           <span class="brand-mark">行知</span>
           <span class="brand-sub">Navi</span>
         </div>
-        <p class="home-lead">选一位成员，看看最近怎么样、下一步做什么。</p>
+        <p class="home-lead">多档案演示：每位成员是一份独立的状态图，数据各自存在本地、彼此看不到。选一位进去，看看 TA 最近怎么样、下一步做什么。</p>
       </header>
       <ul class="user-list" id="user-list"></ul>
       <form class="user-add" id="user-add">
@@ -33,6 +33,8 @@
         <nav class="domains" id="domains" aria-label="领域"></nav>
         <button class="back undo is-hidden" id="btn-undo" title="撤销上一步">↶ 撤销</button>
         <button class="back redo is-hidden" id="btn-redo" title="重做">↷ 重做</button>
+        <button class="back" id="btn-search" title="搜索 (Cmd/Ctrl+K)">搜索</button>
+        <button class="back" id="btn-gen" title="粘一段近况，AI 帮你建图">AI 建图</button>
         <button class="back" id="btn-ai" title="AI 设置">AI</button>
         <time class="dot-time" id="clock"></time>
       </header>
@@ -49,6 +51,7 @@
             <div class="filters">
               <button class="chip" data-filter="all">全部</button>
               <button class="chip is-on" data-filter="open">还没做完</button>
+              <button class="chip" data-filter="today">能今天做完</button>
               <button class="chip" data-filter="blocked">只看卡住的</button>
             </div>
           </div>
@@ -60,6 +63,13 @@
           <div class="detail-body" id="detail-body"></div>
         </aside>
       </section>
+    </div>
+
+    <div class="overlay" id="search-overlay">
+      <div class="search-card">
+        <input id="search-input" type="text" placeholder="搜索领域 / 项目 / 具体的事…（Esc 关闭）" autocomplete="off" />
+        <ul class="search-results" id="search-results"></ul>
+      </div>
     </div>
 
     <div class="overlay" id="overlay">
@@ -99,6 +109,19 @@
         <div class="edit-actions">
           <button type="submit" class="cta" id="edit-save">保存</button>
           <button type="button" class="cta ghost" id="edit-cancel">取消</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="overlay" id="gen-overlay">
+      <form class="edit-card" id="gen-form">
+        <div class="detail-kicker">AI 建图</div>
+        <h3>粘一段近况，自动建图</h3>
+        <p class="ai-note">把最近在忙的、待办、卡点粘进来，AI 会拆成「领域 › 项目 › 具体的事」加到当前成员的图上（可撤销）。需要先在「AI」里配好接口。</p>
+        <label class="fld"><span>你的近况 / 待办</span><textarea name="text" rows="7" maxlength="2000" placeholder="例：这周要出方案，卡在还差两场用户访谈；另外在学 MySQL 事务，想搞懂三种读问题；周末要陪家里人体检…"></textarea></label>
+        <div class="edit-actions">
+          <button type="submit" class="cta" id="gen-run">生成</button>
+          <button type="button" class="cta ghost" id="gen-cancel">取消</button>
         </div>
       </form>
     </div>
