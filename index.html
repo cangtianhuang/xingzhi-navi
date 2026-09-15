@@ -32,6 +32,8 @@
         </div>
         <nav class="domains" id="domains" aria-label="领域"></nav>
         <button class="back undo is-hidden" id="btn-undo" title="撤销上一步">↶ 撤销</button>
+        <button class="back redo is-hidden" id="btn-redo" title="重做">↷ 重做</button>
+        <button class="back" id="btn-ai" title="AI 设置">AI</button>
         <time class="dot-time" id="clock"></time>
       </header>
 
@@ -101,7 +103,24 @@
       </form>
     </div>
 
+    <div class="overlay" id="ai-overlay">
+      <form class="edit-card" id="ai-form">
+        <div class="detail-kicker">接入大模型</div>
+        <h3>AI 设置（OneAPI）</h3>
+        <p class="ai-note">用 OpenAI 兼容接口生成「下一步」。Key 明文存在本机浏览器，仅建议内网 / 本地使用。</p>
+        <label class="fld"><span>接口地址 Base URL</span><input name="baseUrl" placeholder="https://oneapi-comate.baidu-int.com/v1" /></label>
+        <label class="fld"><span>API Key</span><input name="apiKey" type="password" placeholder="sk-..." autocomplete="off" /></label>
+        <label class="fld"><span>模型 Model</span><input name="model" placeholder="gpt-4o-mini" /></label>
+        <div class="edit-actions">
+          <button type="submit" class="cta" id="ai-save">保存</button>
+          <button type="button" class="cta ghost" id="ai-clear">清除</button>
+          <button type="button" class="cta ghost" id="ai-cancel">取消</button>
+        </div>
+      </form>
+    </div>
+
     <script src="js/data.js"></script>
+    <script src="js/ai.js"></script>
     <script src="js/map.js"></script>
     <script src="js/app.js"></script>
   </body>

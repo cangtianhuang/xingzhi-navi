@@ -23,6 +23,7 @@
     overrides: {},
     log: {},
     undo: {},
+    redo: {},
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -232,6 +233,54 @@
     saveStore();
   }
 
+  // 计算某节点的整棵子树（含自身）id 集合
+  function subtreeIds(nodes, id) {
+    const set = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      nodes.forEach((n) => {
+        if (n.parentId && set.has(n.parentId) && !set.has(n.id)) {
+          set.add(n.id);
+          grew = true;
+        }
+      });
+    }
+    return set;
+  }
+
+  // 拖拽改父级：把 id 挂到 newParentId 下（可撤销）
+  function reparentNode(id, newParentId) {
+    if (id === newParentId) return false;
+    let nodes = currentNodes();
+    const node = nodes.find((n) => n.id === id);
+    const parent = nodes.find((n) => n.id === newParentId);
+    if (!node || !parent) return false;
+    if (node.parentId === newParentId) return false;
+    // 目标只能是领域 / 项目；且不能把节点挂到它自己的子树里（成环）
+    if (parent.type !== "domain" && parent.type !== "project") return false;
+    if (subtreeIds(nodes, id).has(newParentId)) return false;
+    pushUndo();
+    nodes = ensureEditable(state.userId);
+    const nd = nodes.find((n) => n.id === id);
+    const pt = nodes.find((n) => n.id === newParentId);
+    const sub = subtreeIds(nodes, id);
+    nd.parentId = newParentId;
+    // 项目只能落在领域下，子任务只能落在项目下
+    if (pt.type === "domain") nd.type = "project";
+    else if (pt.type === "project") nd.type = "task";
+    // 领域归属跟随新父级，整棵子树一起改
+    const newDomain = pt.domain || null;
+    nodes.forEach((n) => {
+      if (sub.has(n.id)) n.domain = newDomain;
+    });
+    nd.updatedAt = "刚刚";
+    if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
+    reflowDeps();
+    saveStore();
+    return true;
+  }
+
   // 可作为依赖的候选：同一成员里除自己及自己子树之外的任务/项目
   function depCandidates(id) {
     const nodes = currentNodes();
@@ -302,27 +351,44 @@
     if (!state.undo[uid]) state.undo[uid] = [];
     state.undo[uid].push(snapshot());
     if (state.undo[uid].length > 40) state.undo[uid].shift();
+    state.redo[uid] = []; // 新的改动会切断原来的重做链
   }
 
   function canUndo() {
     return !!(state.undo[state.userId] && state.undo[state.userId].length);
   }
 
-  function undo() {
+  function canRedo() {
+    return !!(state.redo[state.userId] && state.redo[state.userId].length);
+  }
+
+  // 把一份快照恢复成当前成员的状态
+  function restore(snap) {
     const uid = state.userId;
-    if (!canUndo()) return;
-    const snap = JSON.parse(state.undo[uid].pop());
     if (snap.e) state.extraNodes[uid] = snap.e;
     else delete state.extraNodes[uid];
     if (snap.o) state.overrides[uid] = snap.o;
     else delete state.overrides[uid];
-    // 撤销后当前选中的节点可能已不存在
     const nodes = currentNodes();
     if (!MapU.byId(nodes).get(state.selectedId)) {
       state.selectedId = nodes.find((n) => n.type !== "root")?.id || "root";
     }
     saveStore();
     renderApp();
+  }
+
+  function undo() {
+    const uid = state.userId;
+    if (!canUndo()) return;
+    (state.redo[uid] = state.redo[uid] || []).push(snapshot());
+    restore(JSON.parse(state.undo[uid].pop()));
+  }
+
+  function redo() {
+    const uid = state.userId;
+    if (!canRedo()) return;
+    (state.undo[uid] = state.undo[uid] || []).push(snapshot());
+    restore(JSON.parse(state.redo[uid].pop()));
   }
 
   function nowParts() {
@@ -633,17 +699,76 @@
     svg.setAttribute("preserveAspectRatio", "xMinYMin meet");
     svg.innerHTML = `<g class="links">${links}</g><g class="nodes">${cards}</g>`;
     svg.querySelectorAll(".node-card").forEach((g) => {
-      g.addEventListener("click", () => {
-        const id = g.getAttribute("data-id");
-        const node = MapU.byId(nodesAll).get(id);
-        if (state.selectedId === id && node && (node.type === "domain" || node.type === "project")) {
-          state.focusId = id;
-        }
-        state.selectedId = id;
-        renderMap();
-        renderDetail();
-      });
+      const id = g.getAttribute("data-id");
+      bindNodeDrag(g, id, nodesAll);
     });
+  }
+
+  // 单击选中/下钻；按住拖动到另一张「领域 / 项目」卡片上则改父级
+  function bindNodeDrag(g, id, nodesAll) {
+    const THRESHOLD = 5;
+    let startX = 0,
+      startY = 0,
+      moved = false,
+      dropTarget = null;
+
+    function onDown(e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      moved = false;
+      dropTarget = null;
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    }
+
+    function highlight(el) {
+      svg.querySelectorAll(".node-card.is-drop").forEach((n) => n.classList.remove("is-drop"));
+      if (el) el.classList.add("is-drop");
+    }
+
+    function onMove(e) {
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < THRESHOLD) return;
+      if (!moved) {
+        moved = true;
+        g.classList.add("is-dragging");
+      }
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const card = under && under.closest ? under.closest(".node-card") : null;
+      const tid = card && card.getAttribute("data-id");
+      let ok = null;
+      if (tid && tid !== id) {
+        const t = MapU.byId(nodesAll).get(tid);
+        const sub = subtreeIds(currentNodes(), id);
+        if (t && (t.type === "domain" || t.type === "project") && !sub.has(tid)) ok = card;
+      }
+      dropTarget = ok ? tid : null;
+      highlight(ok);
+    }
+
+    function onUp() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      g.classList.remove("is-dragging");
+      highlight(null);
+      if (moved) {
+        if (dropTarget && reparentNode(id, dropTarget)) {
+          state.selectedId = id;
+          renderApp();
+        }
+        return;
+      }
+      // 没拖动 = 单击：选中，若再次点选容器则下钻
+      const node = MapU.byId(nodesAll).get(id);
+      if (state.selectedId === id && node && (node.type === "domain" || node.type === "project")) {
+        state.focusId = id;
+      }
+      state.selectedId = id;
+      renderMap();
+      renderDetail();
+    }
+
+    g.addEventListener("pointerdown", onDown);
   }
 
   function colorOf(st) {
@@ -707,6 +832,7 @@
         <div class="eta">${node.estimateMin ? "大约要 " + node.estimateMin + " 分钟" : "具体多久，看是哪件事"}</div>
         ${node.nextHint ? `<p class="hint">${escapeXml(node.nextHint)}</p>` : ""}
         <button class="cta" id="btn-start" ${canStart ? "" : "disabled"}>${canStart ? "开始做" : sug.drillTo ? "去看看里面" : "暂时不用做"}</button>
+        ${canEdit && NaviAI.isReady() ? `<button class="cta ghost" id="btn-ai-step">让 AI 想一步</button>` : ""}
         ${node.type !== "task" && node.type !== "root" ? `<button class="cta ghost" id="btn-drill">看看里面有什么</button>` : ""}
       </div>
       <div class="block">
@@ -744,6 +870,8 @@
     });
     const start = $("#btn-start", el);
     if (start && canStart) start.addEventListener("click", () => openFocus(node));
+    const aiStep = $("#btn-ai-step", el);
+    if (aiStep) aiStep.addEventListener("click", () => aiSuggest(node, aiStep));
     const drill = $("#btn-drill", el);
     if (drill) {
       drill.addEventListener("click", () => {
@@ -831,12 +959,81 @@
     state.session = null;
   }
 
+  // —— AI 设置弹窗（OneAPI / OpenAI 兼容） ——
+  function openAI() {
+    const c = NaviAI.getConfig();
+    const form = $("#ai-form");
+    form.baseUrl.value = c.baseUrl || "";
+    form.baseUrl.placeholder = NaviAI.DEFAULT_URL;
+    form.apiKey.value = c.apiKey || "";
+    form.model.value = c.model || "";
+    form.model.placeholder = NaviAI.DEFAULT_MODEL;
+    $("#ai-overlay").classList.add("is-on");
+  }
+
+  function closeAI() {
+    $("#ai-overlay").classList.remove("is-on");
+  }
+
+  function saveAI(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    NaviAI.setConfig({
+      baseUrl: String(fd.get("baseUrl") || "").trim(),
+      apiKey: String(fd.get("apiKey") || "").trim(),
+      model: String(fd.get("model") || "").trim(),
+    });
+    closeAI();
+    renderDetail(); // 配好之后，详情里会露出「让 AI 想一步」
+  }
+
+  function clearAI() {
+    NaviAI.setConfig({});
+    $("#ai-form").reset();
+    closeAI();
+    renderDetail();
+  }
+
+  // 让大模型给这个节点想一个「下一步」，成功后写回（可撤销）
+  async function aiSuggest(node, btn) {
+    if (!NaviAI.isReady()) return openAI();
+    const nodes = currentNodes();
+    const st = MapU.statusOf(node, nodes);
+    const deps = (node.deps || [])
+      .map((id) => MapU.byId(nodes).get(id))
+      .filter(Boolean)
+      .map((d) => `${d.name}（${META.statusLabel[MapU.statusOf(d, nodes)]}）`);
+    const prompt =
+      `事情：${node.name}\n` +
+      `所属：${node.domain ? domainName(node.domain) : "—"}\n` +
+      `当前状态：${META.statusLabel[st] || st}\n` +
+      `现状：${node.brief || "（未填）"}\n` +
+      (node.blockedReason ? `卡在：${node.blockedReason}\n` : "") +
+      (deps.length ? `在等：${deps.join("、")}\n` : "") +
+      `请给出现在最该做的一步。`;
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "AI 想想…";
+    try {
+      const { action, hint } = await NaviAI.suggest(prompt);
+      if (!action) throw new Error("没拿到有效建议");
+      editNode(node.id, { nextAction: action, nextHint: hint || node.nextHint || "" });
+      renderApp();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = old;
+      alert("AI 生成失败：" + (err && err.message ? err.message : err));
+    }
+  }
+
   function renderApp() {
     renderHero();
     renderMap();
     renderDetail();
     const ub = $("#btn-undo");
     if (ub) ub.classList.toggle("is-hidden", !canUndo());
+    const rb = $("#btn-redo");
+    if (rb) rb.classList.toggle("is-hidden", !canRedo());
   }
 
   // —— 编辑弹窗 ——
@@ -928,6 +1125,14 @@
     });
     $("#btn-home").addEventListener("click", goHome);
     $("#btn-undo").addEventListener("click", undo);
+    $("#btn-redo").addEventListener("click", redo);
+    $("#btn-ai").addEventListener("click", openAI);
+    $("#ai-form").addEventListener("submit", saveAI);
+    $("#ai-clear").addEventListener("click", clearAI);
+    $("#ai-cancel").addEventListener("click", closeAI);
+    $("#ai-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "ai-overlay") closeAI();
+    });
     $("#edit-form").addEventListener("submit", submitEditor);
     $("#edit-cancel").addEventListener("click", closeEditor);
     $("#edit-overlay").addEventListener("click", (e) => {
@@ -935,14 +1140,31 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
+        if ($("#ai-overlay").classList.contains("is-on")) closeAI();
+        else if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
         else if ($("#overlay").classList.contains("is-on")) finishFocus(false);
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && state.view === "app") {
-        const overlayOpen = $("#edit-overlay").classList.contains("is-on") || $("#overlay").classList.contains("is-on");
-        if (!overlayOpen && canUndo()) {
-          e.preventDefault();
+        const overlayOpen =
+          $("#edit-overlay").classList.contains("is-on") ||
+          $("#overlay").classList.contains("is-on") ||
+          $("#ai-overlay").classList.contains("is-on");
+        if (overlayOpen) return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (canRedo()) redo();
+        } else if (canUndo()) {
           undo();
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y" && state.view === "app") {
+        const overlayOpen =
+          $("#edit-overlay").classList.contains("is-on") ||
+          $("#overlay").classList.contains("is-on") ||
+          $("#ai-overlay").classList.contains("is-on");
+        if (!overlayOpen && canRedo()) {
+          e.preventDefault();
+          redo();
         }
       }
     });
