@@ -77,6 +77,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
+.brand-tag { font-size: 12px; color: var(--ink-3); margin-left: 4px; }
+.back.is-on { background: var(--sage-soft); color: #5d7a6c; }
 
 .user-list { list-style: none; display: grid; gap: 10px; }
 .user-row {
@@ -568,6 +570,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   .map-wrap { min-height: 60vh; }
   .user-add { grid-template-columns: 1fr; }
   .search-card { width: 100%; }
+  .brand-tag { display: none; }
 }
 
 /* —— 深色主题：跟随系统 —— */

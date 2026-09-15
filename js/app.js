@@ -467,6 +467,7 @@
     state.domain = "all";
     state.focusId = "root";
     state.filter = "open";
+    state.treeOpen = false; // 每次进来先看「今天」的答案，不是整棵树
     const nodes = currentNodes();
     const pick = topPick(nodes);
     const first =
@@ -474,6 +475,87 @@
     state.selectedId = first ? first.id : "root";
     startClock();
     renderApp();
+    refreshRemindBtn();
+    scheduleReminder();
+    morningGreet();
+  }
+
+  // 晨间第一屏：当天首次打开时，用一句问候把「最该做的一件」直接递到眼前
+  function morningGreet() {
+    const KEY = "xingzhi-navi-lastday-v1";
+    const today = nowParts().day;
+    let last = null;
+    try {
+      last = localStorage.getItem(KEY);
+    } catch (e) {}
+    if (last === today) return;
+    try {
+      localStorage.setItem(KEY, today);
+    } catch (e) {}
+    const pick = topPick(currentNodes());
+    setTimeout(() => {
+      showToast(pick ? `${nowParts().greet}，今天先看这件：《${pick.name}》` : `${nowParts().greet}，今天先看一眼状态`);
+    }, 700);
+  }
+
+  // 可选的开工提醒（纯前端：页面开着时，每天 9:00 用系统通知提醒看一眼）
+  const REMIND_KEY = "xingzhi-navi-remind-v1";
+  let _remindTimer = null;
+  function remindOn() {
+    try {
+      return JSON.parse(localStorage.getItem(REMIND_KEY) || "false") === true;
+    } catch (e) {
+      return false;
+    }
+  }
+  function refreshRemindBtn() {
+    const b = $("#btn-remind");
+    if (b) b.classList.toggle("is-on", remindOn());
+  }
+  function scheduleReminder() {
+    if (_remindTimer) {
+      clearTimeout(_remindTimer);
+      _remindTimer = null;
+    }
+    if (!remindOn() || !("Notification" in window) || Notification.permission !== "granted") return;
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(9, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    _remindTimer = setTimeout(() => {
+      const pick = topPick(currentNodes());
+      try {
+        new Notification("行知 Navi · 开工提醒", { body: pick ? `今天最该先动：${pick.name}` : "今天先看一眼状态吧" });
+      } catch (e) {}
+      scheduleReminder();
+    }, next - now);
+  }
+  async function toggleRemind() {
+    if (remindOn()) {
+      try {
+        localStorage.setItem(REMIND_KEY, "false");
+      } catch (e) {}
+      refreshRemindBtn();
+      scheduleReminder();
+      showToast("已关闭开工提醒");
+      return;
+    }
+    if (!("Notification" in window)) {
+      showToast("这个浏览器不支持提醒");
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      showToast("没拿到通知权限，没法提醒");
+      return;
+    }
+    try {
+      localStorage.setItem(REMIND_KEY, "true");
+    } catch (e) {}
+    refreshRemindBtn();
+    scheduleReminder();
+    showToast("好，页面开着时每天 9:00 提醒你看一眼");
   }
 
   function startClock() {
@@ -1685,6 +1767,7 @@
     $("#btn-undo").addEventListener("click", undo);
     $("#btn-redo").addEventListener("click", redo);
     $("#btn-ai").addEventListener("click", openAI);
+    $("#btn-remind").addEventListener("click", toggleRemind);
     $("#btn-search").addEventListener("click", openSearch);
     $("#quick-add").addEventListener("submit", runQuickAdd);
     $("#btn-fullview").addEventListener("click", () => {
