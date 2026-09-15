@@ -215,7 +215,7 @@
     const nodes = ensureEditable(state.userId);
     const node = nodes.find((n) => n.id === id);
     if (!node) return;
-    ["name", "brief", "nextAction", "nextHint"].forEach((k) => {
+    ["name", "brief", "nextAction", "nextHint", "blockedReason"].forEach((k) => {
       if (fields[k] !== undefined) node[k] = fields[k];
     });
     if (fields.estimateMin !== undefined) node.estimateMin = fields.estimateMin;
@@ -1230,6 +1230,118 @@
     }
   }
 
+  // —— 快速记：一句话增量维护（加事 / 记卡点 / 标完成），复用 AI 管线，无 AI 兜底 ——
+  let quickMsgTimer = null;
+  function quickMsg(text) {
+    const el = $("#quick-msg");
+    if (!el) return;
+    el.textContent = text || "";
+    if (quickMsgTimer) clearTimeout(quickMsgTimer);
+    if (text) quickMsgTimer = setTimeout(() => {
+      const e2 = $("#quick-msg");
+      if (e2) e2.textContent = "";
+    }, 3000);
+  }
+
+  // 文本里是否点到了某个已有的事（取名字最长的一处匹配）
+  function findNodeInText(text) {
+    const nodes = currentNodes().filter((n) => n.type === "task" || n.type === "project");
+    let best = null;
+    nodes.forEach((n) => {
+      if (n.name && n.name.length >= 2 && text.includes(n.name) && (!best || n.name.length > best.name.length)) best = n;
+    });
+    return best;
+  }
+
+  // 无 AI 兜底：把一句话记到「随手记」项目下
+  function simpleQuickAdd(line) {
+    pushUndo();
+    const nodes = ensureEditable(state.userId);
+    let inbox = nodes.find((n) => n.type === "project" && n.name === "随手记" && n.domain === "work");
+    if (!inbox) {
+      inbox = { id: newId("project"), parentId: "work", name: "随手记", type: "project", domain: "work",
+        progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚" };
+      nodes.push(inbox);
+    }
+    const t = { id: newId("task"), parentId: inbox.id, name: line.slice(0, 40), type: "task", domain: "work",
+      progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚" };
+    nodes.push(t);
+    reflowDeps();
+    saveStore();
+    return t.id;
+  }
+
+  async function runQuickAdd(e) {
+    e.preventDefault();
+    const input = $("#quick-input");
+    const line = input.value.trim();
+    if (!line) return;
+    const doneRe = /做完|完成|搞定|做好|弄完|交了|发出去|结束了/;
+    const blockedRe = /卡住|卡在|卡了|堵住|受阻|做不下去|推不动/;
+
+    // 1) 先看是不是在更新某个已有的事
+    const target = findNodeInText(line);
+    if (target) {
+      const isLeaf = MapU.childrenOf(currentNodes(), target.id).length === 0;
+      if (doneRe.test(line) && isLeaf) {
+        setStatus(target.id, "done");
+        input.value = "";
+        state.selectedId = target.id;
+        quickMsg(`已把《${target.name}》标记为做完`);
+        renderApp();
+        return;
+      }
+      if (blockedRe.test(line)) {
+        const m = line.match(/卡(?:在|住了?|了)?[：: ,，]*(.*)$/);
+        const reason = (m && m[1] ? m[1] : "").trim();
+        editNode(target.id, { status: "blocked", blockedReason: reason || target.blockedReason || "" });
+        input.value = "";
+        state.selectedId = target.id;
+        quickMsg(`已记下《${target.name}》卡住了`);
+        renderApp();
+        return;
+      }
+    }
+
+    // 2) 否则当成新捕获：优先用 AI 归类，失败/未配置则兜底到「随手记」
+    const btn = $("#quick-btn");
+    const old = btn.textContent;
+    if (NaviAI.isReady()) {
+      btn.disabled = true;
+      btn.textContent = "记下…";
+      try {
+        const items = await NaviAI.plan(line);
+        if (items.length) {
+          pushUndo();
+          const { added, firstId } = applyPlan(items);
+          if (added) {
+            reflowDeps();
+            saveStore();
+            if (firstId) state.selectedId = firstId;
+            quickMsg(`已加进来 ${added} 件`);
+          } else {
+            if (state.undo[state.userId]) state.undo[state.userId].pop();
+            state.selectedId = simpleQuickAdd(line);
+            quickMsg("已记到「随手记」");
+          }
+        } else {
+          state.selectedId = simpleQuickAdd(line);
+          quickMsg("已记到「随手记」");
+        }
+      } catch (err) {
+        state.selectedId = simpleQuickAdd(line);
+        quickMsg("AI 没接上，先记到「随手记」");
+      }
+      btn.disabled = false;
+      btn.textContent = old;
+    } else {
+      state.selectedId = simpleQuickAdd(line);
+      quickMsg("已记到「随手记」");
+    }
+    input.value = "";
+    renderApp();
+  }
+
   function saveAI(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -1385,6 +1497,7 @@
     $("#btn-redo").addEventListener("click", redo);
     $("#btn-ai").addEventListener("click", openAI);
     $("#btn-search").addEventListener("click", openSearch);
+    $("#quick-add").addEventListener("submit", runQuickAdd);
     $("#btn-fullview").addEventListener("click", () => {
       state.treeOpen = true;
       renderApp();

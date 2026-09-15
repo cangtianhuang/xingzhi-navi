@@ -224,6 +224,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .np-open:hover { background: var(--surface-solid); color: var(--ink); }
 
 /* 答案视图：卡点清单 + 今天能清掉的 */
+.quick-add { display: flex; gap: 8px; }
+.quick-add input {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+}
+.quick-add .np-go { padding: 8px 18px; }
+.quick-add .np-go:disabled { opacity: 0.5; cursor: default; }
+.quick-msg { font-size: 13px; color: var(--teal); min-height: 0; margin-top: -8px; }
+.quick-msg:empty { display: none; }
 .ans-h { font-size: 12px; letter-spacing: 0.08em; color: var(--ink-3); margin-bottom: 10px; }
 .ans-h b { color: var(--rose); font-weight: 600; }
 .ans-item {
