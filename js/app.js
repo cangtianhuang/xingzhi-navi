@@ -17,6 +17,7 @@
     session: null,
     tick: null,
     clockTick: null,
+    editor: null,
     users: [],
     extraNodes: {},
     overrides: {},
@@ -56,10 +57,10 @@
     return state.users.find((u) => u.id === state.userId) || state.users[0];
   }
 
-  // 每位成员的原始节点（只读常量 / 新建成员的空图）
+  // 每位成员的原始节点：已分叉的可编辑副本优先，其次只读常量包，最后空图模板
   function baseNodesFor(id) {
-    if (window.NAVI_PACKS[id]) return window.NAVI_PACKS[id].nodes;
     if (state.extraNodes[id]) return state.extraNodes[id];
+    if (window.NAVI_PACKS[id]) return window.NAVI_PACKS[id].nodes;
     const user = state.users.find((u) => u.id === id);
     return window.NAVI_EMPTY_NODES(user?.name || "新成员");
   }
@@ -69,16 +70,28 @@
     return state.overrides[id];
   }
 
-  // 把用户的改动叠加到原始节点上，得到当前真实节点
+  // 把用户的改动叠加到原始节点上，得到当前真实节点（深拷贝 deps，避免误改常量包）
   function applyOverrides(id, nodes) {
-    const ov = state.overrides[id];
-    if (!ov) return nodes.map((n) => ({ ...n }));
-    return nodes.map((n) => (ov[n.id] ? { ...n, ...ov[n.id] } : { ...n }));
+    const ov = state.overrides[id] || {};
+    return nodes.map((n) => {
+      const merged = ov[n.id] ? { ...n, ...ov[n.id] } : { ...n };
+      if (merged.deps) merged.deps = [...merged.deps];
+      return merged;
+    });
   }
 
   function currentNodes() {
     const id = state.userId;
     return applyOverrides(id, baseNodesFor(id));
+  }
+
+  // 首次结构化编辑时，把当前状态（含 override）固化成一份可编辑副本
+  function ensureEditable(id) {
+    if (!state.extraNodes[id]) {
+      state.extraNodes[id] = applyOverrides(id, baseNodesFor(id));
+      delete state.overrides[id];
+    }
+    return state.extraNodes[id];
   }
 
   function DATA() {
@@ -131,6 +144,103 @@
 
   function todayLog() {
     return state.log[state.userId] || [];
+  }
+
+  // —— 结构化编辑：新建 / 修改 / 删除节点 ——
+  function setProgress(id, ratio) {
+    const ov = overridesFor(state.userId);
+    const p = Math.max(0, Math.min(1, ratio));
+    ov[id] = { ...(ov[id] || {}), progress: p, updatedAt: "刚刚" };
+    if (p >= 1) ov[id].status = "done";
+    else if ((ov[id].status || "") === "done") ov[id].status = "active";
+    reflowDeps();
+    saveStore();
+  }
+
+  function newId(prefix) {
+    return (prefix || "n") + "-" + Date.now().toString(36) + Math.floor(Math.random() * 1e3).toString(36);
+  }
+
+  function addNode(parentId, fields) {
+    const nodes = ensureEditable(state.userId);
+    const parent = nodes.find((n) => n.id === parentId);
+    if (!parent) return null;
+    const type = parent.type === "domain" ? "project" : "task";
+    const node = {
+      id: newId(type),
+      parentId,
+      name: fields.name || "新的一件事",
+      type,
+      domain: parent.domain || null,
+      progress: 0,
+      status: fields.status || "active",
+      brief: fields.brief || "",
+      nextAction: fields.nextAction || "",
+      nextHint: fields.nextHint || "",
+      estimateMin: fields.estimateMin || 0,
+      deps: fields.deps || [],
+      updatedAt: "刚刚",
+    };
+    nodes.push(node);
+    reflowDeps();
+    saveStore();
+    return node;
+  }
+
+  function editNode(id, fields) {
+    const nodes = ensureEditable(state.userId);
+    const node = nodes.find((n) => n.id === id);
+    if (!node) return;
+    ["name", "brief", "nextAction", "nextHint"].forEach((k) => {
+      if (fields[k] !== undefined) node[k] = fields[k];
+    });
+    if (fields.estimateMin !== undefined) node.estimateMin = fields.estimateMin;
+    if (fields.status !== undefined) node.status = fields.status;
+    if (fields.deps !== undefined) node.deps = fields.deps;
+    node.updatedAt = "刚刚";
+    // 编辑表单里的状态/进度是权威值，清掉可能盖在上面的快捷 override
+    if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
+    reflowDeps();
+    saveStore();
+  }
+
+  function deleteNode(id) {
+    const nodes = ensureEditable(state.userId);
+    const doomed = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      nodes.forEach((n) => {
+        if (n.parentId && doomed.has(n.parentId) && !doomed.has(n.id)) {
+          doomed.add(n.id);
+          grew = true;
+        }
+      });
+    }
+    state.extraNodes[state.userId] = nodes.filter((n) => !doomed.has(n.id));
+    // 清掉指向已删除节点的依赖
+    state.extraNodes[state.userId].forEach((n) => {
+      if (n.deps) n.deps = n.deps.filter((d) => !doomed.has(d));
+    });
+    reflowDeps();
+    saveStore();
+  }
+
+  // 可作为依赖的候选：同一成员里除自己及自己子树之外的任务/项目
+  function depCandidates(id) {
+    const nodes = currentNodes();
+    const sub = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      nodes.forEach((n) => {
+        if (n.parentId && sub.has(n.parentId) && !sub.has(n.id)) {
+          sub.add(n.id);
+          grew = true;
+        }
+      });
+    }
+    return nodes.filter((n) => !sub.has(n.id) && (n.type === "task" || n.type === "project"));
   }
 
   function nowParts() {
@@ -485,6 +595,19 @@
          </div>`
       : "";
 
+    const canEdit = node.type === "task" || node.type === "project";
+    const canAddChild = node.type === "domain" || node.type === "project";
+    const addLabel = node.type === "domain" ? "新建项目" : "新建子任务";
+    const progControl = canSet
+      ? `<input type="range" class="prog-range" min="0" max="100" value="${Math.round(pr * 100)}" data-prog aria-label="进度" />`
+      : "";
+    const tools = `
+      <div class="detail-tools">
+        ${canAddChild ? `<button class="tool" data-add>＋ ${addLabel}</button>` : ""}
+        ${canEdit ? `<button class="tool" data-edit>编辑</button>` : ""}
+        ${canEdit ? `<button class="tool danger" data-del>删除</button>` : ""}
+      </div>`;
+
     el.innerHTML = `
       <div class="detail-kicker">${typeLabel}${node.domain ? " · " + domainName(node.domain) : ""} · ${node.updatedAt || "—"}</div>
       <h3>${escapeXml(node.name)}</h3>
@@ -492,6 +615,7 @@
       <div class="progress-row">
         <div class="meta"><b>${Math.round(pr * 100)}%</b> <span>现在的进度</span></div>
       </div>
+      ${progControl}
       ${setRow}
       <div class="suggest">
         <div class="ai-tag">下一步</div>
@@ -522,6 +646,7 @@
             : `<p class="empty">不依赖别的节点。</p>`
         }
       </div>
+      ${tools}
     `;
 
     el.querySelectorAll(".dep-item").forEach((row) => {
@@ -549,6 +674,31 @@
         renderApp();
       });
     });
+    const range = $("[data-prog]", el);
+    if (range) {
+      range.addEventListener("input", () => {
+        const m = $(".meta b", el);
+        if (m) m.textContent = range.value + "%";
+      });
+      range.addEventListener("change", () => {
+        setProgress(node.id, Number(range.value) / 100);
+        renderApp();
+      });
+    }
+    const addBtn = $("[data-add]", el);
+    if (addBtn) addBtn.addEventListener("click", () => openEditor("add", node.id));
+    const editBtn = $("[data-edit]", el);
+    if (editBtn) editBtn.addEventListener("click", () => openEditor("edit", node.id));
+    const delBtn = $("[data-del]", el);
+    if (delBtn)
+      delBtn.addEventListener("click", () => {
+        if (!confirm(`删除「${node.name}」？它下面的内容也会一起删掉。`)) return;
+        const parentId = node.parentId;
+        deleteNode(node.id);
+        const left = currentNodes();
+        state.selectedId = (MapU.byId(left).get(parentId) ? parentId : left.find((n) => n.type !== "root")?.id) || "root";
+        renderApp();
+      });
   }
 
   function domainName(id) {
@@ -603,6 +753,80 @@
     renderDetail();
   }
 
+  // —— 编辑弹窗 ——
+  function openEditor(mode, targetId) {
+    state.editor = { mode, targetId };
+    const form = $("#edit-form");
+    form.reset();
+    const nodes = currentNodes();
+    const isAdd = mode === "add";
+    const node = isAdd ? null : MapU.byId(nodes).get(targetId);
+    const parent = isAdd ? MapU.byId(nodes).get(targetId) : null;
+    if (isAdd && !parent) return;
+    const childType = parent && parent.type === "domain" ? "项目" : "一件事";
+    $("#edit-kicker").textContent = isAdd ? `在「${parent.name}」下新建` : "编辑";
+    $("#edit-title").textContent = isAdd ? `新建${childType}` : `编辑：${node.name}`;
+    form.name.value = isAdd ? "" : node.name || "";
+    form.nextAction.value = isAdd ? "" : node.nextAction || "";
+    form.nextHint.value = isAdd ? "" : node.nextHint || "";
+    form.brief.value = isAdd ? "" : node.brief || "";
+    form.estimateMin.value = isAdd ? "" : node.estimateMin || "";
+    form.status.value = isAdd ? "active" : effStatus(node, nodes);
+
+    // 依赖选择：只有叶子（任务/新建项）才谈得上等别的事
+    const forId = isAdd ? "__new__" : targetId;
+    const isLeaf = isAdd || MapU.childrenOf(nodes, targetId).length === 0;
+    const wrap = $("#edit-deps-wrap");
+    const box = $("#edit-deps");
+    if (isLeaf) {
+      wrap.style.display = "";
+      const cur = new Set(isAdd ? [] : node.deps || []);
+      const cands = isAdd ? depCandidates("__none__") : depCandidates(targetId);
+      box.innerHTML = cands.length
+        ? cands
+            .map(
+              (c) =>
+                `<label class="dep-opt"><input type="checkbox" value="${c.id}" ${cur.has(c.id) ? "checked" : ""}/> ${escapeXml(c.name)}</label>`
+            )
+            .join("")
+        : `<span class="empty">还没有别的事可依赖。</span>`;
+    } else {
+      wrap.style.display = "none";
+      box.innerHTML = "";
+    }
+    $("#edit-overlay").classList.add("is-on");
+    form.name.focus();
+  }
+
+  function closeEditor() {
+    $("#edit-overlay").classList.remove("is-on");
+    state.editor = null;
+  }
+
+  function submitEditor(e) {
+    e.preventDefault();
+    if (!state.editor) return;
+    const form = $("#edit-form");
+    const deps = Array.from($("#edit-deps").querySelectorAll("input:checked")).map((i) => i.value);
+    const fields = {
+      name: form.name.value.trim() || "未命名",
+      nextAction: form.nextAction.value.trim(),
+      nextHint: form.nextHint.value.trim(),
+      brief: form.brief.value.trim(),
+      estimateMin: Number(form.estimateMin.value) || 0,
+      status: form.status.value,
+      deps,
+    };
+    if (state.editor.mode === "add") {
+      const created = addNode(state.editor.targetId, fields);
+      if (created) state.selectedId = created.id;
+    } else {
+      editNode(state.editor.targetId, fields);
+    }
+    closeEditor();
+    renderApp();
+  }
+
   function bind() {
     document.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -617,6 +841,17 @@
       if (e.target.id === "overlay") finishFocus(false);
     });
     $("#btn-home").addEventListener("click", goHome);
+    $("#edit-form").addEventListener("submit", submitEditor);
+    $("#edit-cancel").addEventListener("click", closeEditor);
+    $("#edit-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "edit-overlay") closeEditor();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
+        else if ($("#overlay").classList.contains("is-on")) finishFocus(false);
+      }
+    });
     $("#user-add").addEventListener("submit", (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);

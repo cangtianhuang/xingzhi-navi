@@ -231,6 +231,49 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .focus-actions { display: flex; flex-direction: column; gap: 8px; }
 .focus-actions .cta { margin-top: 0; }
 
+/* 详情底部工具 + 进度条 */
+.prog-range { width: 100%; margin: 6px 0 2px; accent-color: var(--teal); }
+.detail-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.tool {
+  font-size: 13px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: rgba(255,255,255,0.6);
+  border: 1px solid var(--line);
+}
+.tool:hover { background: #fff; color: var(--ink); }
+.tool.danger:hover { background: var(--rose-soft); color: var(--rose); border-color: #e4c8b8; }
+
+/* 编辑弹窗 */
+.edit-card {
+  width: min(460px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--paper);
+  border-radius: 22px;
+  padding: 24px 24px 20px;
+}
+.edit-card h3 { font-family: var(--serif); font-size: 20px; margin: 6px 0 16px; }
+.fld { display: block; margin-bottom: 12px; }
+.fld > span { display: block; font-size: 12px; color: var(--ink-3); letter-spacing: 0.04em; margin-bottom: 6px; }
+.fld input, .fld textarea, .fld select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.7);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  resize: vertical;
+}
+.fld-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dep-picker { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow: auto; }
+.dep-opt { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.dep-opt input { width: auto; }
+.edit-actions { display: flex; gap: 10px; margin-top: 8px; }
+.edit-actions .cta { margin-top: 0; }
+.edit-actions .cta.ghost { flex: 0 0 auto; width: auto; padding: 12px 18px; }
+
 .workspace {
   min-height: 0;
   display: grid;
