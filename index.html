@@ -67,8 +67,8 @@
     <div class="overlay" id="unblock-overlay">
       <form class="edit-card" id="unblock-form">
         <div class="detail-kicker">解卡</div>
-        <h3 id="unblock-title">把卡点拆成能动的一步</h3>
-        <label class="fld"><span>现在到底卡在哪里？</span><textarea name="reason" rows="2" maxlength="160" placeholder="一句话说清楚卡点"></textarea></label>
+        <h3 id="unblock-title">把卡住的地方拆成能动的一步</h3>
+        <label class="fld"><span>现在到底卡在哪里？</span><textarea name="reason" rows="2" maxlength="160" placeholder="一句话说清楚卡在哪"></textarea></label>
         <label class="fld"><span>那么，能动的第一步是什么？</span><input name="step" maxlength="60" placeholder="动词开头，小到能立刻上手" /></label>
         <button type="button" class="cta ghost" id="unblock-ai">让 AI 帮我想一步</button>
         <div class="edit-actions">
@@ -102,7 +102,7 @@
     <div class="overlay" id="edit-overlay">
       <form class="edit-card" id="edit-form">
         <div class="detail-kicker" id="edit-kicker">编辑</div>
-        <h3 id="edit-title">编辑节点</h3>
+        <h3 id="edit-title">编辑</h3>
         <label class="fld"><span>名称</span><input name="name" maxlength="40" required /></label>
         <label class="fld"><span>下一步做什么</span><input name="nextAction" maxlength="60" /></label>
         <label class="fld"><span>一句提示</span><textarea name="nextHint" rows="2" maxlength="160"></textarea></label>
@@ -119,7 +119,7 @@
             </select>
           </label>
         </div>
-        <div class="fld" id="edit-deps-wrap"><span>在等哪些事（依赖）</span><div class="dep-picker" id="edit-deps"></div></div>
+        <div class="fld" id="edit-deps-wrap"><span>在等哪些事</span><div class="dep-picker" id="edit-deps"></div></div>
         <div class="edit-actions">
           <button type="submit" class="cta" id="edit-save">保存</button>
           <button type="button" class="cta ghost" id="edit-cancel">取消</button>
@@ -131,7 +131,7 @@
       <form class="edit-card" id="gen-form">
         <div class="detail-kicker">AI 建图</div>
         <h3>粘一段近况，自动建图</h3>
-        <p class="ai-note">把最近在忙的、待办、卡点粘进来，AI 会拆成「领域 › 项目 › 具体的事」加到当前成员的图上（可撤销）。需要先在「AI」里配好接口。</p>
+        <p class="ai-note">把最近在忙的、要做的、卡住的地方粘进来，AI 会帮你理成「领域 › 项目 › 具体的事」加到你的状态图上（可撤销）。需要先在「AI」里填好设置。</p>
         <label class="fld"><span>你的近况 / 待办</span><textarea name="text" rows="7" maxlength="2000" placeholder="例：这周要出方案，卡在还差两场用户访谈；另外在学 MySQL 事务，想搞懂三种读问题；周末要陪家里人体检…"></textarea></label>
         <div class="edit-actions">
           <button type="submit" class="cta" id="gen-run">生成</button>

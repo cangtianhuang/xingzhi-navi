@@ -380,7 +380,7 @@
     }
 
     if (st === "blocked") {
-      const base = node.blockedReason ? `先拆掉卡点：${node.blockedReason}` : "想清楚是什么卡住了，写下能动的第一步。";
+      const base = node.blockedReason ? `先想办法解开：${node.blockedReason}` : "想清楚是什么卡住了，写下能动的第一步。";
       return { text: explicit || base, canAct: true, derived: !explicit };
     }
     return { text: explicit || `花 ${node.estimateMin || 15} 分钟往前推一步。`, canAct: true, derived: !explicit };
@@ -1102,7 +1102,7 @@
                   return `<div class="dep-item" data-id="${d.id}"><span class="dn">${escapeXml(d.name)}</span><span class="ds">${META.statusLabel[ds]}</span></div>`;
                 })
                 .join("")
-            : `<p class="empty">不依赖别的节点。</p>`
+            : `<p class="empty">不用等别的事。</p>`
         }
       </div>
       ${
@@ -1713,7 +1713,7 @@
                 `<label class="dep-opt"><input type="checkbox" value="${c.id}" ${cur.has(c.id) ? "checked" : ""}/> ${escapeXml(c.name)}</label>`
             )
             .join("")
-        : `<span class="empty">还没有别的事可依赖。</span>`;
+        : `<span class="empty">还没有别的事可以等。</span>`;
     } else {
       wrap.style.display = "none";
       box.innerHTML = "";
