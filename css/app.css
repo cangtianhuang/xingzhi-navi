@@ -348,7 +348,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .badge.waiting { color: #7a6b88; background: var(--lilac-soft); }
 
 .progress-row { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 2px; }
-.ring { display: none; }
 .progress-row .meta b { font-family: var(--serif); font-size: 26px; font-weight: 600; }
 .progress-row .meta span { font-size: 13px; color: var(--ink-3); }
 

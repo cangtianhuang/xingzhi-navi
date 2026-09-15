@@ -112,7 +112,7 @@
     saveStore();
   }
 
-  // deps 全部完成的 waiting 节点 → active（可以开始了），级联直到稳定
+  // deps 全部完成的 waiting 叶子 → active（可以开始了）；依赖又回退则改回 waiting，级联直到稳定
   function reflowDeps() {
     const ov = overridesFor(state.userId);
     for (let pass = 0; pass < 6; pass++) {
@@ -120,15 +120,21 @@
       const map = MapU.byId(nodes);
       let changed = false;
       nodes.forEach((n) => {
-        if (effStatus(n, nodes) !== "waiting") return;
         const deps = n.deps || [];
         if (!deps.length) return;
+        // 容器状态由子节点派生，给它写 override 无效，跳过
+        if (MapU.childrenOf(nodes, n.id).length) return;
+        const st = effStatus(n, nodes);
         const ready = deps.every((d) => {
           const dn = map.get(d);
           return dn && effStatus(dn, nodes) === "done";
         });
-        if (ready) {
+        if (st === "waiting" && ready) {
           ov[n.id] = { ...(ov[n.id] || {}), status: "active", updatedAt: "可以开始了" };
+          changed = true;
+        } else if (st === "active" && !ready && n.updatedAt === "可以开始了") {
+          // 之前是自动放行的（updatedAt 标记），现在依赖又没完成了 → 退回「在等前面的事」
+          ov[n.id] = { ...(ov[n.id] || {}), status: "waiting", updatedAt: "又要等前面的事了" };
           changed = true;
         }
       });
@@ -139,14 +145,16 @@
   function logEntry(name, done) {
     const uid = state.userId;
     if (!state.log[uid]) state.log[uid] = [];
-    const { clock } = nowParts();
-    state.log[uid].unshift({ name, done: !!done, at: clock.split(" ").pop() });
+    const { clock, day } = nowParts();
+    state.log[uid].unshift({ name, done: !!done, at: clock.split(" ").pop(), day });
     state.log[uid] = state.log[uid].slice(0, 12);
     saveStore();
   }
 
+  // 只返回「今天」的记录（老数据没有 day 字段，按今天算以兼容）
   function todayLog() {
-    return state.log[state.userId] || [];
+    const { day } = nowParts();
+    return (state.log[state.userId] || []).filter((e) => !e.day || e.day === day);
   }
 
   // —— 结构化编辑：新建 / 修改 / 删除节点 ——
@@ -249,27 +257,31 @@
     return set;
   }
 
+  // 拖拽目标是否合法：只在同层级语义内搬家，保持 领域>项目>具体的事 三层不变式
+  // 项目只能挂到领域下，具体的事只能挂到项目下；领域本身不可拖动改父级
+  function canReparent(node, parent, nodes) {
+    if (!node || !parent || node.id === parent.id) return false;
+    if (node.parentId === parent.id) return false;
+    if (node.type === "project" && parent.type !== "domain") return false;
+    if (node.type === "task" && parent.type !== "project") return false;
+    if (node.type !== "project" && node.type !== "task") return false; // 领域/总览不参与
+    if (subtreeIds(nodes, node.id).has(parent.id)) return false; // 不能挂进自己的子树（成环）
+    return true;
+  }
+
   // 拖拽改父级：把 id 挂到 newParentId 下（可撤销）
   function reparentNode(id, newParentId) {
-    if (id === newParentId) return false;
     let nodes = currentNodes();
     const node = nodes.find((n) => n.id === id);
     const parent = nodes.find((n) => n.id === newParentId);
-    if (!node || !parent) return false;
-    if (node.parentId === newParentId) return false;
-    // 目标只能是领域 / 项目；且不能把节点挂到它自己的子树里（成环）
-    if (parent.type !== "domain" && parent.type !== "project") return false;
-    if (subtreeIds(nodes, id).has(newParentId)) return false;
+    if (!canReparent(node, parent, nodes)) return false;
     pushUndo();
     nodes = ensureEditable(state.userId);
     const nd = nodes.find((n) => n.id === id);
     const pt = nodes.find((n) => n.id === newParentId);
     const sub = subtreeIds(nodes, id);
     nd.parentId = newParentId;
-    // 项目只能落在领域下，子任务只能落在项目下
-    if (pt.type === "domain") nd.type = "project";
-    else if (pt.type === "project") nd.type = "task";
-    // 领域归属跟随新父级，整棵子树一起改
+    // 层级受 canReparent 约束，节点及其子树的 type 天然保持不变，只需把领域归属跟随新父级
     const newDomain = pt.domain || null;
     nodes.forEach((n) => {
       if (sub.has(n.id)) n.domain = newDomain;
@@ -397,8 +409,9 @@
     const greet = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 13 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
     const wk = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
     const p2 = (n) => String(n).padStart(2, "0");
-    const clock = `${d.getMonth() + 1}月${d.getDate()}日${wk} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
-    return { greet, clock };
+    const day = `${d.getMonth() + 1}月${d.getDate()}日`;
+    const clock = `${day}${wk} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    return { greet, clock, day };
   }
 
   function loopItems(nodes) {
@@ -424,7 +437,7 @@
       const li = document.createElement("li");
       li.innerHTML = `
         <button class="user-row" data-enter="${u.id}">
-          <span class="avatar ${u.tone || "sand"}">${initials(u.name)}</span>
+          <span class="avatar ${u.tone || "sand"}">${escapeXml(initials(u.name))}</span>
           <span class="user-meta">
             <b>${escapeXml(u.name)}</b>
             <span>${escapeXml(u.title || "没填角色")}${u.note ? " · " + escapeXml(u.note) : ""}</span>
@@ -433,7 +446,7 @@
             <span class="user-flag">${s.blocked ? s.blocked + " 件卡住了" : s.open ? s.open + " 件还没做完" : "新成员"}</span>
           </span>
         </button>
-        <button class="user-del" data-del="${u.id}" title="移除" aria-label="移除 ${u.name}">×</button>`;
+        <button class="user-del" data-del="${u.id}" title="移除" aria-label="移除 ${escapeXml(u.name)}">×</button>`;
       li.style.display = "grid";
       li.style.gridTemplateColumns = "1fr auto";
       li.style.alignItems = "center";
@@ -496,9 +509,17 @@
   }
 
   function removeUser(id) {
-    if (state.users.length <= 1) return;
+    if (state.users.length <= 1) {
+      alert("至少保留一位成员。");
+      return;
+    }
     state.users = state.users.filter((u) => u.id !== id);
+    // 连同该成员的所有本地数据一起清掉，避免残留孤儿数据
     delete state.extraNodes[id];
+    delete state.overrides[id];
+    delete state.log[id];
+    delete state.undo[id];
+    delete state.redo[id];
     saveStore();
     renderHome();
   }
@@ -641,7 +662,7 @@
     const chain = ancestors(state.focusId);
     el.innerHTML = chain
       .map((n, i) => {
-        const name = n.id === "root" ? "全部" : n.name;
+        const name = escapeXml(n.id === "root" ? "全部" : n.name);
         if (i === chain.length - 1) return `<span>${name}</span>`;
         return `<button data-id="${n.id}">${name}</button><span>/</span>`;
       })
@@ -685,9 +706,10 @@
       const st = MapU.statusOf(n, nodesAll);
       const pr = MapU.progressOf(n, nodesAll);
       const label = n.type === "root" ? "总览" : META.statusLabel[st] || "";
+      const aria = escapeXml(`${n.name}，${label}，进度 ${Math.round(pr * 100)}%`);
       cards += `
         <g class="node-card${state.selectedId === n.id ? " is-sel" : ""}${st === "blocked" ? " is-blocked" : ""}${st === "done" ? " is-done" : ""}"
-           data-id="${n.id}" tabindex="0" transform="translate(${p.x}, ${p.y})">
+           data-id="${n.id}" tabindex="0" role="button" aria-label="${aria}" transform="translate(${p.x}, ${p.y})">
           <rect class="plate" rx="12" width="${p.w}" height="${p.h}" />
           <circle cx="16" cy="29" r="4.5" fill="${colorOf(st)}" />
           <text class="node-title" x="28" y="25">${escapeXml(n.name)}</text>
@@ -738,9 +760,9 @@
       const tid = card && card.getAttribute("data-id");
       let ok = null;
       if (tid && tid !== id) {
-        const t = MapU.byId(nodesAll).get(tid);
-        const sub = subtreeIds(currentNodes(), id);
-        if (t && (t.type === "domain" || t.type === "project") && !sub.has(tid)) ok = card;
+        const nodes = currentNodes();
+        const nmap = MapU.byId(nodes);
+        if (canReparent(nmap.get(id), nmap.get(tid), nodes)) ok = card;
       }
       dropTarget = ok ? tid : null;
       highlight(ok);
@@ -769,6 +791,18 @@
     }
 
     g.addEventListener("pointerdown", onDown);
+    // 键盘可达：Enter / 空格 = 选中并（对容器）下钻
+    g.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      const node = MapU.byId(nodesAll).get(id);
+      if (state.selectedId === id && node && (node.type === "domain" || node.type === "project")) {
+        state.focusId = id;
+      }
+      state.selectedId = id;
+      renderMap();
+      renderDetail();
+    });
   }
 
   function colorOf(st) {
@@ -831,7 +865,7 @@
         <h5>${escapeXml(sug.text)}</h5>
         <div class="eta">${node.estimateMin ? "大约要 " + node.estimateMin + " 分钟" : "具体多久，看是哪件事"}</div>
         ${node.nextHint ? `<p class="hint">${escapeXml(node.nextHint)}</p>` : ""}
-        <button class="cta" id="btn-start" ${canStart ? "" : "disabled"}>${canStart ? "开始做" : sug.drillTo ? "去看看里面" : "暂时不用做"}</button>
+        <button class="cta" id="btn-start" ${canStart || sug.drillTo ? "" : "disabled"}>${canStart ? "开始做" : sug.drillTo ? "去看看里面" : "暂时不用做"}</button>
         ${canEdit && NaviAI.isReady() ? `<button class="cta ghost" id="btn-ai-step">让 AI 想一步</button>` : ""}
         ${node.type !== "task" && node.type !== "root" ? `<button class="cta ghost" id="btn-drill">看看里面有什么</button>` : ""}
       </div>
@@ -870,6 +904,13 @@
     });
     const start = $("#btn-start", el);
     if (start && canStart) start.addEventListener("click", () => openFocus(node));
+    else if (start && sug.drillTo)
+      start.addEventListener("click", () => {
+        state.focusId = sug.drillTo;
+        state.selectedId = sug.drillTo;
+        renderMap();
+        renderDetail();
+      });
     const aiStep = $("#btn-ai-step", el);
     if (aiStep) aiStep.addEventListener("click", () => aiSuggest(node, aiStep));
     const drill = $("#btn-drill", el);
