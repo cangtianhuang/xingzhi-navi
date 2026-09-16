@@ -7,7 +7,7 @@
   const LOG_KEY = "xingzhi-navi-log-v1";
 
   const state = {
-    view: "app",
+    view: "welcome",
     userId: "u-lin",
     focusId: "root",
     selectedId: null,
@@ -1861,7 +1861,18 @@
     });
   }
 
+  // 主页 →「进入」→ 状态图：从欢迎页切进 app 并启动
+  function enterApp() {
+    const w = $("#view-welcome");
+    if (w) w.classList.add("is-hidden");
+    const a = $("#view-app");
+    if (a) a.classList.remove("is-hidden");
+    boot();
+  }
+
   loadStore();
   bind();
-  boot();
+  const enterBtn = $("#btn-enter");
+  if (enterBtn) enterBtn.addEventListener("click", enterApp);
+  else enterApp(); // 没有欢迎页（老结构）时直接进入
 })();
