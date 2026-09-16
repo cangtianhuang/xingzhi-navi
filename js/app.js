@@ -1546,11 +1546,12 @@
   }
 
   // 文本里是否点到了某个已有的事（取名字最长的一处匹配）
+  // 名字阈值放到 3，避免「开会」这类短名被「关于开会的准备」误命中
   function findNodeInText(text) {
     const nodes = currentNodes().filter((n) => n.type === "task" || n.type === "project");
     let best = null;
     nodes.forEach((n) => {
-      if (n.name && n.name.length >= 2 && text.includes(n.name) && (!best || n.name.length > best.name.length)) best = n;
+      if (n.name && n.name.length >= 3 && text.includes(n.name) && (!best || n.name.length > best.name.length)) best = n;
     });
     return best;
   }
@@ -1586,6 +1587,8 @@
     if (target) {
       const isLeaf = MapU.childrenOf(currentNodes(), target.id).length === 0;
       if (doneRe.test(line) && isLeaf) {
+        // 命中已有节点就要置「做完」，先确认一次，避免子串误命中直接改状态
+        if (!confirm(`把《${target.name}》标记为做完？`)) return;
         setStatus(target.id, "done");
         input.value = "";
         state.selectedId = target.id;
@@ -1625,21 +1628,21 @@
           } else {
             if (state.undo[state.userId]) state.undo[state.userId].pop();
             state.selectedId = simpleQuickAdd(line);
-            quickMsg("已记到「随手记」");
+            quickMsg("已记到「工作 › 随手记」，可拖到别处");
           }
         } else {
           state.selectedId = simpleQuickAdd(line);
-          quickMsg("已记到「随手记」");
+          quickMsg("已记到「工作 › 随手记」，可拖到别处");
         }
       } catch (err) {
         state.selectedId = simpleQuickAdd(line);
-        quickMsg("AI 没接上，先记到「随手记」");
+        quickMsg("AI 没接上，先记到「工作 › 随手记」");
       }
       btn.disabled = false;
       btn.textContent = old;
     } else {
       state.selectedId = simpleQuickAdd(line);
-      quickMsg("已记到「随手记」");
+      quickMsg("已记到「工作 › 随手记」，可拖到别处");
     }
     input.value = "";
     renderApp();
