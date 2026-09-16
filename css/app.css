@@ -668,3 +668,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   .ans-done { color: #93b6a2; }
   .tool.danger:hover { color: #dc9d86; border-color: #5a4038; }
 }
+
+/* 尊重「减弱动效」偏好：压掉动画与位移，保留可用性 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .welcome-card { animation: none; }
+  .user-row:hover, .np-open:hover { transform: none; }
+}
