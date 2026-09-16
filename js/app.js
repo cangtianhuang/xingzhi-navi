@@ -57,13 +57,30 @@
     }
   }
 
+  function persistAll() {
+    localStorage.setItem(USER_KEY, JSON.stringify(state.users));
+    localStorage.setItem(NODE_KEY, JSON.stringify(state.extraNodes));
+    localStorage.setItem(OVERRIDE_KEY, JSON.stringify(state.overrides));
+    localStorage.setItem(LOG_KEY, JSON.stringify(state.log));
+  }
+
   function saveStore() {
     try {
-      localStorage.setItem(USER_KEY, JSON.stringify(state.users));
-      localStorage.setItem(NODE_KEY, JSON.stringify(state.extraNodes));
-      localStorage.setItem(OVERRIDE_KEY, JSON.stringify(state.overrides));
-      localStorage.setItem(LOG_KEY, JSON.stringify(state.log));
-    } catch (e) {}
+      persistAll();
+    } catch (e) {
+      const quota = e && (e.name === "QuotaExceededError" || /quota|exceeded/i.test(String(e.name || e.message || "")));
+      if (quota) {
+        // 空间不够：裁短日志释放一点空间再试一次，仍失败才提示（避免静默丢数据）
+        try {
+          Object.keys(state.log).forEach((k) => {
+            state.log[k] = (state.log[k] || []).slice(0, 6);
+          });
+          persistAll();
+          return;
+        } catch (e2) {}
+        showToast("本机存储空间不够，这次改动可能没存上");
+      }
+    }
   }
 
   function currentUser() {
