@@ -32,7 +32,7 @@
         <button class="back undo is-hidden" id="btn-undo" title="撤销上一步">↶ 撤销</button>
         <button class="back redo is-hidden" id="btn-redo" title="重做">↷ 重做</button>
         <button class="back" id="btn-search" title="搜索 (Cmd/Ctrl+K)">搜索</button>
-        <button class="back" id="btn-gen" title="粘一段近况，AI 帮你建图">AI 建图</button>
+        <button class="back" id="btn-gen" title="粘一段近况(配了 AI)或按格式手写，快速建图">建图</button>
         <button class="back" id="btn-remind" title="每天开工提醒（页面开着时）">提醒</button>
         <button class="back" id="btn-ai" title="AI 设置">AI</button>
         <time class="dot-time" id="clock"></time>
@@ -141,10 +141,10 @@
 
     <div class="overlay" id="gen-overlay">
       <form class="edit-card" id="gen-form">
-        <div class="detail-kicker">AI 建图</div>
-        <h3>粘一段近况，自动建图</h3>
-        <p class="ai-note">把最近在忙的、要做的、卡住的地方粘进来，AI 会帮你理成「领域 › 项目 › 具体的事」加到你的状态图上（可撤销）。需要先在「AI」里填好设置。</p>
-        <label class="fld"><span>你的近况 / 待办</span><textarea name="text" rows="7" maxlength="2000" placeholder="例：这周要出方案，卡在还差两场用户访谈；另外在学 MySQL 事务，想搞懂三种读问题；周末要陪家里人体检…"></textarea></label>
+        <div class="detail-kicker">建图</div>
+        <h3>粘一段近况，或按格式手写，快速建图</h3>
+        <p class="ai-note">配好「AI」后，把最近在忙的、要做的、卡住的地方粘进来，自动理成「领域 › 项目 › 具体的事」（可撤销）。<b>没配 AI 也能用</b>：按「领域/项目/具体的事」每行写一条即可。</p>
+        <label class="fld"><span>你的近况 / 待办</span><textarea name="text" rows="7" maxlength="2000" placeholder="配了 AI：这周要出方案，卡在还差两场用户访谈；在学 MySQL 事务想搞懂三种读问题…&#10;&#10;没配 AI（每行一条）：&#10;工作/Q3规划/约两场用户访谈&#10;学习/系统设计/读完第 7 章&#10;生活/周末回家/给家里打个电话"></textarea></label>
         <div class="edit-actions">
           <button type="submit" class="cta" id="gen-run">生成</button>
           <button type="button" class="cta ghost" id="gen-cancel">取消</button>

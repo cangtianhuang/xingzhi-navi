@@ -758,7 +758,7 @@
     let lead;
     if (!hasContent) {
       lead =
-        '状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。' +
+        '状态图还是空的。点顶部「建图」——配了 AI 就粘一段近况自动拆，没配也能按「领域/项目/具体的事」每行手写；或选一个领域点「＋ 新建项目」。' +
         '<button class="link-btn" id="btn-reset-sample">恢复示例数据</button>';
     } else if (open.length === 0) {
       lead = "手上的事都清完了，喘口气。";
@@ -1511,6 +1511,40 @@
     $("#gen-overlay").classList.remove("is-on");
   }
 
+  // 领域中文名 → id，用于无 AI 时的手动结构化录入
+  const DOMAIN_BY_NAME = { 工作: "work", 学习: "study", 生活: "life", 项目: "proj" };
+
+  // 无 AI 冷启动：把「领域/项目/具体的事」这样的每行文本解析成结构化条目
+  function parseManualPlan(text) {
+    const items = [];
+    String(text || "")
+      .split(/\n+/)
+      .forEach((line) => {
+        const parts = line
+          .split(/[\/>›｜|、]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (!parts.length) return;
+        let domain = "work";
+        if (DOMAIN_BY_NAME[parts[0]]) {
+          domain = DOMAIN_BY_NAME[parts[0]];
+          parts.shift();
+        }
+        let project;
+        let task;
+        if (parts.length >= 2) {
+          project = parts[0];
+          task = parts.slice(1).join(" ");
+        } else if (parts.length === 1) {
+          project = "随手记";
+          task = parts[0];
+        }
+        if (!task) return;
+        items.push({ domain, project, task });
+      });
+    return items;
+  }
+
   // 把模型给的结构化条目落到当前成员的图上（一次改动一份撤销快照）
   function applyPlan(items) {
     const validDomains = META.domains.map((d) => d.id);
@@ -1573,18 +1607,44 @@
 
   async function runGen(e) {
     e.preventDefault();
-    if (!NaviAI.isReady()) {
-      closeGen();
-      return openAI();
-    }
-    const btn = $("#gen-run");
     const text = $("#gen-form").text.value.trim();
     if (!text) return;
+
+    // 没配 AI：按「领域/项目/具体的事」手动格式解析，冷启动也能建图，不强依赖模型
+    if (!NaviAI.isReady()) {
+      const items = parseManualPlan(text);
+      if (!items.length) {
+        alert(
+          "没配 AI 时，请按「领域/项目/具体的事」每行一条。例如：\n工作/Q3规划/约两场访谈\n学习/系统设计/读完第 7 章\n\n也可以点右上角「AI」配好模型后，直接粘一段近况自动拆分。"
+        );
+        return;
+      }
+      pushUndo();
+      const r = applyPlan(items);
+      if (!r.added) {
+        if (state.undo[state.userId]) state.undo[state.userId].pop();
+        alert("这些条目好像都已经在图上了。");
+        return;
+      }
+      reflowDeps();
+      saveStore();
+      if (r.firstId) {
+        state.selectedId = r.firstId;
+        const t = MapU.byId(currentNodes()).get(r.firstId);
+        if (t && t.parentId) state.focusId = t.parentId === "root" ? "root" : t.parentId;
+      }
+      closeGen();
+      renderApp();
+      return;
+    }
+
+    const btn = $("#gen-run");
+    const text2 = text;
     const old = btn.textContent;
     btn.disabled = true;
     btn.textContent = "AI 梳理中…";
     try {
-      const items = await NaviAI.plan(text);
+      const items = await NaviAI.plan(text2);
       if (!items.length) throw new Error("没能从这段文字里拆出条目，换个说法再试试");
       pushUndo();
       const { added, firstId } = applyPlan(items);
