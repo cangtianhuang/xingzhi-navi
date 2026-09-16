@@ -1556,6 +1556,13 @@
     return items;
   }
 
+  // 建图 / 快速记时带给 AI 的「已有项目」清单：让它复用已有项目，别造近义重复项
+  function existingProjectList() {
+    return currentNodes()
+      .filter((n) => n.type === "project")
+      .map((n) => ({ domain: n.domain || "work", name: n.name }));
+  }
+
   // 把模型给的结构化条目落到当前成员的图上（一次改动一份撤销快照）
   function applyPlan(items) {
     const validDomains = META.domains.map((d) => d.id);
@@ -1655,7 +1662,7 @@
     btn.disabled = true;
     btn.textContent = "AI 梳理中…";
     try {
-      const items = await NaviAI.plan(text2);
+      const items = await NaviAI.plan(text2, existingProjectList());
       if (!items.length) throw new Error("没能从这段文字里拆出条目，换个说法再试试");
       pushUndo();
       const { added, firstId } = applyPlan(items);
@@ -1766,7 +1773,7 @@
       btn.disabled = true;
       btn.textContent = "记下…";
       try {
-        const items = await NaviAI.plan(line);
+        const items = await NaviAI.plan(line, existingProjectList());
         if (items.length) {
           pushUndo();
           const { added, firstId } = applyPlan(items);

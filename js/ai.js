@@ -99,7 +99,8 @@ window.NaviAI = (function () {
   }
 
   // 把一段自由文字拆成结构化条目（用于批量建图）
-  async function plan(text) {
+  // existingProjects: [{domain, name}]，带给模型让它优先复用已有项目、别造近义重复项
+  async function plan(text, existingProjects) {
     const c = getConfig();
     if (!c.apiKey) throw new Error("还没填 API Key");
     const sys =
@@ -108,7 +109,8 @@ window.NaviAI = (function () {
       '每项形如 {"domain":"work","project":"项目名","task":"具体的一件事","brief":"一句现状（可空）","nextAction":"下一步动作（可空，动词开头）","estimateMin":30}。' +
       "domain 必须四选一：work（工作）/ study（学习）/ life（生活）/ proj（项目）。" +
       "task 是最小可执行的一件事，一句话；同一 project 可以有多条 task 拆成多项。" +
-      "estimateMin 是预计分钟的数字，拿不准就给 25。最多输出 20 项。";
+      "estimateMin 是预计分钟的数字，拿不准就给 25。最多输出 20 项。" +
+      existingProjectsHint(existingProjects);
     const txt = await postChat(
       [
         { role: "system", content: sys },
@@ -117,6 +119,26 @@ window.NaviAI = (function () {
       { temperature: 0.4, max_tokens: 1200 }
     );
     return parseArray(txt);
+  }
+
+  // 拼一段「已有项目」提示：鼓励复用已有 project，避免生成近义重复项（如 餐饮/饮食）
+  function existingProjectsHint(existingProjects) {
+    const list = (Array.isArray(existingProjects) ? existingProjects : []).filter((p) => p && p.name);
+    if (!list.length) return "";
+    const byDom = {};
+    list.forEach((p) => {
+      const d = p.domain || "work";
+      (byDom[d] = byDom[d] || []).push(String(p.name).trim());
+    });
+    const lines = Object.keys(byDom)
+      .map((d) => `${d}：${Array.from(new Set(byDom[d])).join("、")}`)
+      .join("\n");
+    return (
+      "\n\n下面是用户已有的项目（按领域分组）：\n" +
+      lines +
+      "\n如果某件事属于上面某个已有项目，project 字段必须原样填该项目名（一字不差），" +
+      "不要另造近义名（例如已有「餐饮」就不要再建「饮食」）；只有确实没有合适的已有项目时，才新建一个新 project。"
+    );
   }
 
   // 从模型输出里取出 JSON 数组，容忍代码块围栏
