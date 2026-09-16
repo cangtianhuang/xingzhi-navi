@@ -1048,13 +1048,16 @@
       const pr = MapU.progressOf(n, nodesAll);
       const label = n.type === "root" ? "总览" : META.statusLabel[st] || "";
       const aria = escapeXml(`${n.name}，${label}，进度 ${Math.round(pr * 100)}%`);
+      // 名称过长按可用宽度截断，完整名放进 <title> 悬浮显示，避免横穿相邻卡片
+      const shortName = n.name && n.name.length > 11 ? n.name.slice(0, 11) + "…" : n.name;
       cards += `
-        <g class="node-card${state.selectedId === n.id ? " is-sel" : ""}${st === "blocked" ? " is-blocked" : ""}${st === "done" ? " is-done" : ""}"
+        <g class="node-card st-${st}${state.selectedId === n.id ? " is-sel" : ""}${st === "blocked" ? " is-blocked" : ""}${st === "done" ? " is-done" : ""}"
            data-id="${n.id}" tabindex="0" role="button"${state.selectedId === n.id ? ' aria-current="true"' : ""} aria-label="${aria}" transform="translate(${p.x}, ${p.y})">
+          <title>${escapeXml(n.name)}</title>
           <rect class="plate" rx="12" width="${p.w}" height="${p.h}" />
-          <circle cx="18" cy="29" r="7" fill="${colorOf(st)}" />
+          <circle class="stat-dot" cx="18" cy="29" r="7" />
           <text class="node-glyph" x="18" y="29" text-anchor="middle" dominant-baseline="central">${escapeXml(glyphOf(st))}</text>
-          <text class="node-title" x="33" y="25">${escapeXml(n.name)}</text>
+          <text class="node-title" x="33" y="25">${escapeXml(shortName)}</text>
           <text class="node-sub" x="33" y="42">${label} · ${Math.round(pr * 100)}%</text>
         </g>`;
     });
@@ -1156,8 +1159,13 @@
     });
   }
 
+  // 状态色统一走 CSS 变量，深色主题可整体重定义，不再散落写死 hex
   function colorOf(st) {
-    return { blocked: "#c98972", active: "#7d8ea3", flowing: "#7d9a8a", waiting: "#9a8aa8", done: "#b5c1b8" }[st] || "#b5aea6";
+    return (
+      { blocked: "var(--st-blocked)", active: "var(--st-active)", flowing: "var(--st-flowing)", waiting: "var(--st-waiting)", done: "var(--st-done)" }[
+        st
+      ] || "var(--ink-3)"
+    );
   }
 
   // 状态的形状/符号冗余：不只靠颜色区分，色盲用户也能一眼分辨

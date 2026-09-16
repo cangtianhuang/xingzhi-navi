@@ -22,6 +22,11 @@
   --green-soft: #e4eee8;
   --blue-soft: #e6ebf1;
   --wait-soft: #eee7f2;
+  --st-blocked: #c98972;
+  --st-active: #7d8ea3;
+  --st-flowing: #7d9a8a;
+  --st-waiting: #9a8aa8;
+  --st-done: #93a89c;
   --map-bg: rgba(255, 252, 248, 0.8);
   --surface: rgba(255, 255, 255, 0.65);
   --surface-solid: #ffffff;
@@ -442,6 +447,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .node-card.is-sel .plate { stroke: #b7a394; }
 .node-card.is-blocked .plate { fill: var(--card-blocked); stroke: #e4c8b8; }
 .node-card.is-done .plate { fill: var(--card-done); }
+/* 三态不再只靠小圆点区分：给卡面一层极浅的语义底色，扫一眼也能分辨 */
+.node-card.st-active .plate { fill: var(--blue-soft); }
+.node-card.st-waiting .plate { fill: var(--wait-soft); }
+.node-card.st-flowing .plate { fill: var(--green-soft); }
+/* 选中态描边优先级最高，压过状态底色的描边 */
+.node-card.is-sel .plate { stroke: #b7a394; stroke-width: 1.6; }
+/* 状态圆点走变量，深浅主题各自取色 */
+.stat-dot { fill: var(--st-active); }
+.node-card.st-blocked .stat-dot { fill: var(--st-blocked); }
+.node-card.st-active .stat-dot { fill: var(--st-active); }
+.node-card.st-flowing .stat-dot { fill: var(--st-flowing); }
+.node-card.st-waiting .stat-dot { fill: var(--st-waiting); }
+.node-card.st-done .stat-dot { fill: var(--st-done); }
 .node-title { font-family: var(--font); font-size: 13px; font-weight: 550; fill: var(--ink); }
 .node-sub { font-family: var(--font); font-size: 11px; fill: var(--ink-3); }
 .node-glyph { font-family: var(--font); font-size: 8.5px; font-weight: 700; fill: #fff; pointer-events: none; }
@@ -639,6 +657,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
     --green-soft: #23322b;
     --blue-soft: #232d38;
     --wait-soft: #2f2836;
+    --st-blocked: #dc9d86;
+    --st-active: #9fb2c8;
+    --st-flowing: #93b6a2;
+    --st-waiting: #b5a3c6;
+    --st-done: #8fa596;
     --map-bg: rgba(255, 255, 255, 0.025);
     --surface: rgba(255, 255, 255, 0.06);
     --surface-solid: rgba(255, 255, 255, 0.13);
