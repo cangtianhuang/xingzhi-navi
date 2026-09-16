@@ -2,8 +2,8 @@
   --bg: #f3eee8;
   --paper: #fbf8f4;
   --ink: #3c372f;
-  --ink-2: #7a7369;
-  --ink-3: #a39b91;
+  --ink-2: #6d675e;
+  --ink-3: #857c70;
   --line: #e7dfd4;
   --rose: #c98972;
   --sage: #7d9a8a;
@@ -625,8 +625,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
     --bg: #1b1915;
     --paper: #262320;
     --ink: #ece7dd;
-    --ink-2: #ada69b;
-    --ink-3: #837c72;
+    --ink-2: #b8b1a6;
+    --ink-3: #9a9186;
     --line: #37332c;
     --rose-soft: #3a2a24;
     --sage-soft: #23322b;
