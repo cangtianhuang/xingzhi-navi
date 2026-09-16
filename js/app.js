@@ -625,13 +625,22 @@
     showToast("好，页面开着时每天 9:00 提醒你看一眼");
   }
 
+  let _lastDay = null;
   function startClock() {
     stopClock();
     const el = $("#clock");
     if (el) el.textContent = nowParts().clock;
+    _lastDay = nowParts().day;
     state.clockTick = setInterval(() => {
+      const np = nowParts();
       const c = $("#clock");
-      if (c) c.textContent = nowParts().clock;
+      if (c) c.textContent = np.clock;
+      // 跨午夜：「今天」的计数、好久没动、晨间问候都要按新的一天重算
+      if (np.day !== _lastDay) {
+        _lastDay = np.day;
+        renderApp();
+        morningGreet();
+      }
     }, 30000);
   }
 
