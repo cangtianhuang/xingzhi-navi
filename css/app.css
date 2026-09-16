@@ -183,7 +183,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .app {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
-  height: 100%;
+  /* 用视口高度而非 height:100%：#view-app 从 display:none 切出时，
+     百分比高度依赖父级链、首帧算不稳会让内容行塌成 0（要缩放窗口才冒出来）。
+     视口单位首帧即为确定值，1fr 内容行能立刻拿到高度。dvh 优先，vh 兜底。 */
+  height: 100vh;
+  height: 100dvh;
   max-width: 1320px;
   margin: 0 auto;
   padding: 24px 32px 24px;
@@ -657,7 +661,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .search-results .sr-path { font-size: 12px; color: var(--ink-3); }
 .search-empty { padding: 14px 12px; color: var(--ink-3); font-size: 14px; }
 
-@media (max-width: 960px) {
+@media (max-width: 9600px) {
   .app { height: auto; padding: 18px; }
   .app:not(.tree-open), .app.tree-open { grid-template-rows: auto auto auto auto; }
   .answer { overflow: visible; }
