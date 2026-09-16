@@ -654,11 +654,15 @@
     const doneLine = doneCount ? `今天已经做完 <em>${doneCount}</em> 件。` : "";
     // 立意：首屏先讲「卡在哪 / 下一步」，不报「还剩多少没做」这种待办计数
     const pick = topPick(data.nodes);
+    // 区分「真的什么都没有」和「手上的事都做完了」——后者是好事，不能当空图诱导重建
+    const hasContent = data.nodes.some((n) => n.type === "project" || n.type === "task");
     let lead;
-    if (open.length === 0) {
+    if (!hasContent) {
       lead =
         '状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。' +
         '<button class="link-btn" id="btn-reset-sample">恢复示例数据</button>';
+    } else if (open.length === 0) {
+      lead = "手上的事都清完了，喘口气。";
     } else if (blocked.length) {
       lead = `<em>${blocked.length}</em> 件卡住了，最该先解开《${escapeXml(blocked[0].name)}》。`;
     } else if (pick) {
