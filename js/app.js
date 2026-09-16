@@ -1,14 +1,16 @@
 (function () {
   const META = window.NAVI_META;
   const MapU = window.NaviMap;
-  const USER_KEY = "xingzhi-navi-users-v1";
   const NODE_KEY = "xingzhi-navi-nodes-v1";
   const OVERRIDE_KEY = "xingzhi-navi-overrides-v1";
   const LOG_KEY = "xingzhi-navi-log-v1";
 
+  // 单一个人 OS：固定档案「林予」，只读常量包见 NAVI_PACKS['u-lin']
+  const PROFILE = (window.NAVI_SEED_USERS && window.NAVI_SEED_USERS[0]) || { name: "我" };
+  const BASE_PACK = (window.NAVI_PACKS && window.NAVI_PACKS["u-lin"] && window.NAVI_PACKS["u-lin"].nodes) || null;
+
   const state = {
     view: "welcome",
-    userId: "u-lin",
     focusId: "root",
     selectedId: null,
     filter: "open",
@@ -21,12 +23,11 @@
     unblockId: null,
     searchList: [],
     searchActive: 0,
-    users: [],
-    extraNodes: {},
-    overrides: {},
-    log: {},
-    undo: {},
-    redo: {},
+    editable: null, // 已分叉的可编辑副本（null 表示还在用只读常量包）
+    overrides: {}, // 未分叉时叠加在常量包上的轻改动：id → 局部字段
+    log: [], // 今日完成记录
+    undo: [],
+    redo: [],
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -41,25 +42,21 @@
 
   function loadStore() {
     try {
-      const users = JSON.parse(localStorage.getItem(USER_KEY) || "null");
-      const extra = JSON.parse(localStorage.getItem(NODE_KEY) || "{}");
+      const nodes = JSON.parse(localStorage.getItem(NODE_KEY) || "null");
       const over = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || "{}");
-      const log = JSON.parse(localStorage.getItem(LOG_KEY) || "{}");
-      state.users = Array.isArray(users) && users.length ? users : window.NAVI_SEED_USERS.map((u) => ({ ...u }));
-      state.extraNodes = extra && typeof extra === "object" ? extra : {};
+      const log = JSON.parse(localStorage.getItem(LOG_KEY) || "[]");
+      state.editable = Array.isArray(nodes) ? nodes : null;
       state.overrides = over && typeof over === "object" ? over : {};
-      state.log = log && typeof log === "object" ? log : {};
+      state.log = Array.isArray(log) ? log : [];
     } catch (e) {
-      state.users = window.NAVI_SEED_USERS.map((u) => ({ ...u }));
-      state.extraNodes = {};
+      state.editable = null;
       state.overrides = {};
-      state.log = {};
+      state.log = [];
     }
   }
 
   function persistAll() {
-    localStorage.setItem(USER_KEY, JSON.stringify(state.users));
-    localStorage.setItem(NODE_KEY, JSON.stringify(state.extraNodes));
+    localStorage.setItem(NODE_KEY, JSON.stringify(state.editable));
     localStorage.setItem(OVERRIDE_KEY, JSON.stringify(state.overrides));
     localStorage.setItem(LOG_KEY, JSON.stringify(state.log));
   }
@@ -72,9 +69,7 @@
       if (quota) {
         // 空间不够：裁短日志释放一点空间再试一次，仍失败才提示（避免静默丢数据）
         try {
-          Object.keys(state.log).forEach((k) => {
-            state.log[k] = (state.log[k] || []).slice(0, 6);
-          });
+          state.log = state.log.slice(0, 6);
           persistAll();
           return;
         } catch (e2) {}
@@ -83,21 +78,11 @@
     }
   }
 
-  function currentUser() {
-    return state.users.find((u) => u.id === state.userId) || state.users[0];
-  }
-
   // 原始节点：已分叉的可编辑副本优先，其次只读常量包（林予），最后空图模板
-  function baseNodesFor(id) {
-    if (state.extraNodes[id]) return state.extraNodes[id];
-    if (window.NAVI_PACKS[id]) return window.NAVI_PACKS[id].nodes;
-    const user = state.users.find((u) => u.id === id);
-    return window.NAVI_EMPTY_NODES(user?.name || "我");
-  }
-
-  function overridesFor(id) {
-    if (!state.overrides[id]) state.overrides[id] = {};
-    return state.overrides[id];
+  function baseNodes() {
+    if (state.editable) return state.editable;
+    if (BASE_PACK) return BASE_PACK;
+    return window.NAVI_EMPTY_NODES(PROFILE.name || "我");
   }
 
   // 把「今天 16:20 / 昨天 / 周一 / 上周五」这类相对时间反推成时间戳，
@@ -129,8 +114,8 @@
   }
 
   // 把用户的改动叠加到原始节点上，得到当前真实节点（深拷贝 deps，避免误改常量包）
-  function applyOverrides(id, nodes) {
-    const ov = state.overrides[id] || {};
+  function applyOverrides(nodes) {
+    const ov = state.overrides || {};
     return nodes.map((n) => {
       const merged = ov[n.id] ? { ...n, ...ov[n.id] } : { ...n };
       if (merged.deps) merged.deps = [...merged.deps];
@@ -144,21 +129,20 @@
   }
 
   function currentNodes() {
-    const id = state.userId;
-    return applyOverrides(id, baseNodesFor(id));
+    return applyOverrides(baseNodes());
   }
 
   // 首次结构化编辑时，把当前状态（含 override）固化成一份可编辑副本
-  function ensureEditable(id) {
-    if (!state.extraNodes[id]) {
-      state.extraNodes[id] = applyOverrides(id, baseNodesFor(id));
-      delete state.overrides[id];
+  function ensureEditable() {
+    if (!state.editable) {
+      state.editable = applyOverrides(baseNodes());
+      state.overrides = {};
     }
-    return state.extraNodes[id];
+    return state.editable;
   }
 
   function DATA() {
-    return { user: currentUser() || { name: "" }, nodes: currentNodes() };
+    return { user: PROFILE, nodes: currentNodes() };
   }
 
   const effStatus = (node, nodes) => MapU.statusOf(node, nodes);
@@ -166,7 +150,7 @@
   // 把一个节点推进到新状态，并把依赖它的 waiting 节点自动放行
   function setStatus(id, status) {
     pushUndo();
-    const ov = overridesFor(state.userId);
+    const ov = state.overrides;
     ov[id] = { ...(ov[id] || {}), status, updatedAt: "刚刚", updatedTs: Date.now() };
     if (status === "done") ov[id].progress = 1;
     reflowDeps();
@@ -175,7 +159,7 @@
 
   // deps 全部完成的 waiting 叶子 → active（可以开始了）；依赖又回退则改回 waiting，级联直到稳定
   function reflowDeps() {
-    const ov = overridesFor(state.userId);
+    const ov = state.overrides;
     const freed = [];
     // 上限按节点数（+1），保证再深的依赖链也能收敛到稳定，而不是固定 6 趟中途停下
     const maxPass = currentNodes().length + 1;
@@ -230,24 +214,22 @@
   }
 
   function logEntry(name, done) {
-    const uid = state.userId;
-    if (!state.log[uid]) state.log[uid] = [];
     const { clock, day } = nowParts();
-    state.log[uid].unshift({ name, done: !!done, at: clock.split(" ").pop(), day });
-    state.log[uid] = state.log[uid].slice(0, 12);
+    state.log.unshift({ name, done: !!done, at: clock.split(" ").pop(), day });
+    state.log = state.log.slice(0, 12);
     saveStore();
   }
 
   // 只返回「今天」的记录（老数据没有 day 字段，按今天算以兼容）
   function todayLog() {
     const { day } = nowParts();
-    return (state.log[state.userId] || []).filter((e) => !e.day || e.day === day);
+    return state.log.filter((e) => !e.day || e.day === day);
   }
 
   // —— 结构化编辑：新建 / 修改 / 删除节点 ——
   function setProgress(id, ratio) {
     pushUndo();
-    const ov = overridesFor(state.userId);
+    const ov = state.overrides;
     const p = Math.max(0, Math.min(1, ratio));
     ov[id] = { ...(ov[id] || {}), progress: p, updatedAt: "刚刚", updatedTs: Date.now() };
     if (p >= 1) ov[id].status = "done";
@@ -262,7 +244,7 @@
 
   function addNode(parentId, fields) {
     pushUndo();
-    const nodes = ensureEditable(state.userId);
+    const nodes = ensureEditable();
     const parent = nodes.find((n) => n.id === parentId);
     if (!parent) return null;
     const type = parent.type === "domain" ? "project" : "task";
@@ -290,7 +272,7 @@
 
   function editNode(id, fields) {
     pushUndo();
-    const nodes = ensureEditable(state.userId);
+    const nodes = ensureEditable();
     const node = nodes.find((n) => n.id === id);
     if (!node) return;
     ["name", "brief", "nextAction", "nextHint", "blockedReason"].forEach((k) => {
@@ -302,14 +284,14 @@
     node.updatedAt = "刚刚";
     node.updatedTs = Date.now();
     // 编辑表单里的状态/进度是权威值，清掉可能盖在上面的快捷 override
-    if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
+    delete state.overrides[id];
     reflowDeps();
     saveStore();
   }
 
   function deleteNode(id) {
     pushUndo();
-    const nodes = ensureEditable(state.userId);
+    const nodes = ensureEditable();
     const doomed = new Set([id]);
     let grew = true;
     while (grew) {
@@ -321,9 +303,9 @@
         }
       });
     }
-    state.extraNodes[state.userId] = nodes.filter((n) => !doomed.has(n.id));
+    state.editable = nodes.filter((n) => !doomed.has(n.id));
     // 清掉指向已删除节点的依赖
-    state.extraNodes[state.userId].forEach((n) => {
+    state.editable.forEach((n) => {
       if (n.deps) n.deps = n.deps.filter((d) => !doomed.has(d));
     });
     reflowDeps();
@@ -365,7 +347,7 @@
     const parent = nodes.find((n) => n.id === newParentId);
     if (!canReparent(node, parent, nodes)) return false;
     pushUndo();
-    nodes = ensureEditable(state.userId);
+    nodes = ensureEditable();
     const nd = nodes.find((n) => n.id === id);
     const pt = nodes.find((n) => n.id === newParentId);
     const sub = subtreeIds(nodes, id);
@@ -377,7 +359,7 @@
     });
     nd.updatedAt = "刚刚";
     nd.updatedTs = Date.now();
-    if (state.overrides[state.userId]) delete state.overrides[state.userId][id];
+    delete state.overrides[id];
     reflowDeps();
     saveStore();
     return true;
@@ -469,36 +451,29 @@
     return { text: explicit || `花 ${node.estimateMin || 15} 分钟往前推一步。`, canAct: true, derived: !explicit };
   }
 
-  // —— 撤销：每次改动前存一份该成员的快照 ——
+  // —— 撤销：每次改动前存一份快照 ——
   function snapshot() {
-    const uid = state.userId;
-    return JSON.stringify({ e: state.extraNodes[uid] || null, o: state.overrides[uid] || null });
+    return JSON.stringify({ e: state.editable || null, o: state.overrides || null });
   }
 
   function pushUndo() {
-    const uid = state.userId;
-    if (!uid) return;
-    if (!state.undo[uid]) state.undo[uid] = [];
-    state.undo[uid].push(snapshot());
-    if (state.undo[uid].length > 40) state.undo[uid].shift();
-    state.redo[uid] = []; // 新的改动会切断原来的重做链
+    state.undo.push(snapshot());
+    if (state.undo.length > 40) state.undo.shift();
+    state.redo = []; // 新的改动会切断原来的重做链
   }
 
   function canUndo() {
-    return !!(state.undo[state.userId] && state.undo[state.userId].length);
+    return state.undo.length > 0;
   }
 
   function canRedo() {
-    return !!(state.redo[state.userId] && state.redo[state.userId].length);
+    return state.redo.length > 0;
   }
 
-  // 把一份快照恢复成当前成员的状态
+  // 把一份快照恢复成当前状态
   function restore(snap) {
-    const uid = state.userId;
-    if (snap.e) state.extraNodes[uid] = snap.e;
-    else delete state.extraNodes[uid];
-    if (snap.o) state.overrides[uid] = snap.o;
-    else delete state.overrides[uid];
+    state.editable = snap.e || null;
+    state.overrides = snap.o || {};
     const nodes = currentNodes();
     if (!MapU.byId(nodes).get(state.selectedId)) {
       state.selectedId = nodes.find((n) => n.type !== "root")?.id || "root";
@@ -508,17 +483,15 @@
   }
 
   function undo() {
-    const uid = state.userId;
     if (!canUndo()) return;
-    (state.redo[uid] = state.redo[uid] || []).push(snapshot());
-    restore(JSON.parse(state.undo[uid].pop()));
+    state.redo.push(snapshot());
+    restore(JSON.parse(state.undo.pop()));
   }
 
   function redo() {
-    const uid = state.userId;
     if (!canRedo()) return;
-    (state.undo[uid] = state.undo[uid] || []).push(snapshot());
-    restore(JSON.parse(state.redo[uid].pop()));
+    state.undo.push(snapshot());
+    restore(JSON.parse(state.redo.pop()));
   }
 
   function nowParts() {
@@ -537,21 +510,14 @@
     return nodes.filter((n) => n.type === "project").filter((n) => effStatus(n, nodes) !== "done");
   }
 
-  // 个人 OS：固定单一档案（林予），四个领域即多个方面，不再有成员名单
-  function ensureSingleUser() {
-    const seed = window.NAVI_SEED_USERS.find((u) => u.id === "u-lin") || window.NAVI_SEED_USERS[0];
-    if (!state.users.find((u) => u.id === seed.id)) state.users = [{ ...seed }];
-    state.userId = seed.id;
-  }
-
   // 恢复到内置示例数据（林予）：清掉本机存的改动副本，回落到只读常量包
   // 用于修复早期版本残留的空/损坏本地数据，不必再去控制台跑 localStorage.clear()
   function resetToSample() {
     if (!confirm("恢复到内置示例（林予）？会清掉你在本机做过的改动。")) return;
-    delete state.extraNodes[state.userId];
-    if (state.overrides) delete state.overrides[state.userId];
-    state.undo[state.userId] = [];
-    state.redo[state.userId] = [];
+    state.editable = null;
+    state.overrides = {};
+    state.undo = [];
+    state.redo = [];
     saveStore();
     boot();
     showToast("已恢复内置示例数据");
@@ -564,16 +530,15 @@
     const hasDomain = nodes.some((n) => n.type === "domain");
     const hasRoot = nodes.some((n) => n.type === "root");
     if (hasDomain && hasRoot) return false;
-    delete state.extraNodes[state.userId];
-    if (state.overrides) delete state.overrides[state.userId];
-    state.undo[state.userId] = [];
-    state.redo[state.userId] = [];
+    state.editable = null;
+    state.overrides = {};
+    state.undo = [];
+    state.redo = [];
     saveStore();
     return true;
   }
 
   function boot() {
-    ensureSingleUser();
     const healed = healIfBroken();
     state.view = "app";
     state.domain = "all";
@@ -871,7 +836,7 @@
 
   // 确认某条仍然有效：只刷新它的更新时间，不进撤销栈（不是一次真的改动）
   function confirmFresh(id) {
-    const ov = overridesFor(state.userId);
+    const ov = state.overrides;
     ov[id] = { ...(ov[id] || {}), updatedAt: "刚确认", updatedTs: Date.now() };
     saveStore();
     renderApp();
@@ -1548,7 +1513,7 @@
   // 把模型给的结构化条目落到当前成员的图上（一次改动一份撤销快照）
   function applyPlan(items) {
     const validDomains = META.domains.map((d) => d.id);
-    const nodes = ensureEditable(state.userId);
+    const nodes = ensureEditable();
     const ensureProject = (domId, name) => {
       let p = nodes.find((n) => n.parentId === domId && n.type === "project" && n.name === name);
       if (!p) {
@@ -1622,7 +1587,7 @@
       pushUndo();
       const r = applyPlan(items);
       if (!r.added) {
-        if (state.undo[state.userId]) state.undo[state.userId].pop();
+        if (state.undo.length) state.undo.pop();
         alert("这些条目好像都已经在图上了。");
         return;
       }
@@ -1650,7 +1615,7 @@
       const { added, firstId } = applyPlan(items);
       if (!added) {
         // 没有实际新增，撤销刚压入的空快照
-        if (state.undo[state.userId]) state.undo[state.userId].pop();
+        if (state.undo.length) state.undo.pop();
         throw new Error("没有可添加的新条目（可能都已存在）");
       }
       reflowDeps();
@@ -1698,7 +1663,7 @@
   // 无 AI 兜底：把一句话记到「随手记」项目下
   function simpleQuickAdd(line) {
     pushUndo();
-    const nodes = ensureEditable(state.userId);
+    const nodes = ensureEditable();
     let inbox = nodes.find((n) => n.type === "project" && n.name === "随手记" && n.domain === "work");
     if (!inbox) {
       inbox = { id: newId("project"), parentId: "work", name: "随手记", type: "project", domain: "work",
@@ -1765,7 +1730,7 @@
             if (firstId) state.selectedId = firstId;
             quickMsg(`已加进来 ${added} 件`);
           } else {
-            if (state.undo[state.userId]) state.undo[state.userId].pop();
+            if (state.undo.length) state.undo.pop();
             state.selectedId = simpleQuickAdd(line);
             quickMsg("已记到「工作 › 随手记」，可拖到别处");
           }
