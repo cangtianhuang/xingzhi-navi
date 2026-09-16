@@ -1846,6 +1846,11 @@
     renderAnswer(DATA().nodes);
     renderMap();
     renderDetail();
+    const vt = $("#btn-viewtoggle");
+    if (vt) {
+      vt.textContent = state.treeOpen ? "← 回到今天" : "看全貌";
+      vt.classList.toggle("is-on", !!state.treeOpen);
+    }
     const ub = $("#btn-undo");
     if (ub) ub.classList.toggle("is-hidden", !canUndo());
     const rb = $("#btn-redo");
@@ -2031,15 +2036,13 @@
     $("#btn-remind").addEventListener("click", toggleRemind);
     $("#btn-search").addEventListener("click", openSearch);
     $("#quick-add").addEventListener("submit", runQuickAdd);
-    $("#btn-fullview").addEventListener("click", () => {
-      state.treeOpen = true;
-      renderApp();
-    });
-    $("#btn-backtoday").addEventListener("click", () => {
-      // 回到「今天」：清掉领域筛选与焦点，回到跨领域的全局视图
-      state.treeOpen = false;
-      state.domain = "all";
-      state.focusId = "root";
+    // 单一视图开关：在「今天」与「看全貌」之间来回，回到今天时清掉领域筛选与焦点
+    $("#btn-viewtoggle").addEventListener("click", () => {
+      state.treeOpen = !state.treeOpen;
+      if (!state.treeOpen) {
+        state.domain = "all";
+        state.focusId = "root";
+      }
       renderApp();
     });
     $("#btn-gen").addEventListener("click", openGen);

@@ -27,6 +27,8 @@
           <span class="brand-tag">每天开工的第一屏</span>
         </div>
         <nav class="domains" id="domains" aria-label="领域"></nav>
+        <button class="back view-toggle" id="btn-viewtoggle" title="在「今天」与「看全貌」之间切换">看全貌</button>
+        <span class="topbar-sep" aria-hidden="true"></span>
         <button class="back undo is-hidden" id="btn-undo" title="撤销上一步">↶ 撤销</button>
         <button class="back redo is-hidden" id="btn-redo" title="重做">↷ 重做</button>
         <button class="back" id="btn-search" title="搜索 (Cmd/Ctrl+K)">搜索</button>
@@ -51,7 +53,6 @@
         <div class="ans-block" id="ans-blocked"></div>
         <div class="ans-block" id="ans-today"></div>
         <div class="ans-block" id="ans-stale"></div>
-        <button class="ans-full" id="btn-fullview">看全貌 ▾</button>
       </section>
 
       <section class="workspace">
@@ -59,7 +60,6 @@
           <div class="panel-hd">
             <div class="crumbs" id="crumbs"></div>
             <div class="filters">
-              <button class="chip back-today" id="btn-backtoday" title="回到今天视图">← 回到今天</button>
               <button class="chip" data-filter="all">全部</button>
               <button class="chip is-on" data-filter="open">还没做完</button>
               <button class="chip" data-filter="today">能今天做完</button>

@@ -204,6 +204,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   border-radius: 999px;
 }
 .back:hover { background: var(--surface); color: var(--ink); }
+/* 单一视图开关：比普通工具按钮更醒目一点，且与领域 tab 之间用分隔线断开 */
+.view-toggle { background: var(--surface); color: var(--ink); font-weight: 550; }
+.view-toggle.is-on { background: var(--ink); color: var(--paper); }
+.topbar-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
 .domains { display: flex; gap: 4px; flex: 1; }
 .domain-card {
   padding: 7px 13px;
