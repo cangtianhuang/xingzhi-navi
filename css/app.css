@@ -579,6 +579,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .cta:disabled { opacity: 0.4; cursor: default; }
 .cta.ghost { margin-top: 8px; background: transparent; color: var(--ink-2); font-weight: 400; }
 .cta.ghost:hover { background: var(--surface); }
+.cta.ghost.danger { color: var(--rose); }
+.cta.ghost.danger:hover { background: var(--rose-soft); color: var(--rose); }
 
 .overlay {
   position: fixed;
@@ -661,7 +663,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .search-results .sr-path { font-size: 12px; color: var(--ink-3); }
 .search-empty { padding: 14px 12px; color: var(--ink-3); font-size: 14px; }
 
-@media (max-width: 9600px) {
+@media (max-width: 960px) {
   .app { height: auto; padding: 18px; }
   .app:not(.tree-open), .app.tree-open { grid-template-rows: auto auto auto auto; }
   .answer { overflow: visible; }

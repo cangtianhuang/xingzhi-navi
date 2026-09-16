@@ -35,6 +35,8 @@
         <button class="back" id="btn-gen" title="粘一段近况(配了 AI)或按格式手写，快速建图">建图</button>
         <button class="back" id="btn-remind" title="每天开工提醒（页面开着时）">提醒</button>
         <button class="back" id="btn-ai" title="AI 设置">AI</button>
+        <button class="back" id="btn-me" title="我的资料：改名字，或清空示例从空白开始">我的</button>
+        <button class="back" id="btn-home" title="回到主页">主页</button>
         <time class="dot-time" id="clock"></time>
       </header>
 
@@ -164,6 +166,21 @@
           <button type="submit" class="cta" id="ai-save">保存</button>
           <button type="button" class="cta ghost" id="ai-clear">清除</button>
           <button type="button" class="cta ghost" id="ai-cancel">取消</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="overlay" id="me-overlay">
+      <form class="edit-card" id="me-form">
+        <div class="detail-kicker">我的资料</div>
+        <h3>填入你的信息，或从空白开始</h3>
+        <p class="ai-note">现在显示的是内置示例（「林予」）。把名字改成你自己的即可；想清掉示例内容、用自己的结构从头记，点下面的「清空示例」。资料只存在本机浏览器。</p>
+        <label class="fld"><span>你的名字</span><input name="name" maxlength="20" placeholder="怎么称呼你" /></label>
+        <label class="fld"><span>一句话身份（可留空）</span><input name="title" maxlength="30" placeholder="比如：产品与研究" /></label>
+        <div class="edit-actions">
+          <button type="submit" class="cta" id="me-save">保存</button>
+          <button type="button" class="cta ghost danger" id="me-fresh">清空示例，从空白开始</button>
+          <button type="button" class="cta ghost" id="me-cancel">取消</button>
         </div>
       </form>
     </div>

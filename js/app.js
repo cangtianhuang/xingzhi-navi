@@ -4,9 +4,11 @@
   const NODE_KEY = "xingzhi-navi-nodes-v1";
   const OVERRIDE_KEY = "xingzhi-navi-overrides-v1";
   const LOG_KEY = "xingzhi-navi-log-v1";
+  const PROFILE_KEY = "xingzhi-navi-profile-v1";
 
-  // 单一个人 OS：固定档案「林予」，只读常量包见 NAVI_PACKS['u-lin']
-  const PROFILE = (window.NAVI_SEED_USERS && window.NAVI_SEED_USERS[0]) || { name: "我" };
+  // 单一个人 OS：默认档案「林予」，只读常量包见 NAVI_PACKS['u-lin']；
+  // 用户在「我的资料」里改名/改身份后，覆盖存在本机 PROFILE_KEY，下次进来沿用。
+  let PROFILE = { ...((window.NAVI_SEED_USERS && window.NAVI_SEED_USERS[0]) || { name: "我" }) };
   const BASE_PACK = (window.NAVI_PACKS && window.NAVI_PACKS["u-lin"] && window.NAVI_PACKS["u-lin"].nodes) || null;
 
   const state = {
@@ -34,7 +36,7 @@
 
   // 是否有任意弹窗打开（撤销/重做、快捷键需要避让）
   function anyOverlayOpen() {
-    return ["#edit-overlay", "#overlay", "#ai-overlay", "#gen-overlay", "#unblock-overlay", "#search-overlay"].some((id) => {
+    return ["#edit-overlay", "#overlay", "#ai-overlay", "#gen-overlay", "#unblock-overlay", "#search-overlay", "#me-overlay"].some((id) => {
       const el = document.querySelector(id);
       return el && el.classList.contains("is-on");
     });
@@ -53,6 +55,21 @@
       state.overrides = {};
       state.log = [];
     }
+    loadProfile();
+  }
+
+  // 本机保存过的个人资料（名字 / 身份）优先于默认档案「林予」
+  function loadProfile() {
+    try {
+      const p = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+      if (p && typeof p === "object" && p.name) PROFILE = { ...PROFILE, ...p };
+    } catch (e) {}
+  }
+
+  function persistProfile() {
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({ name: PROFILE.name, title: PROFILE.title || "" }));
+    } catch (e) {}
   }
 
   function persistAll() {
@@ -525,6 +542,56 @@
     saveStore();
     boot();
     showToast("已恢复内置示例数据");
+  }
+
+  // —— 我的资料：改名字 / 身份，或清空示例从空白开始 ——
+  function openMe() {
+    const form = $("#me-form");
+    form.name.value = PROFILE.name || "";
+    form.title.value = PROFILE.title || "";
+    $("#me-overlay").classList.add("is-on");
+    setTimeout(() => form.name.focus(), 0);
+  }
+
+  function closeMe() {
+    $("#me-overlay").classList.remove("is-on");
+  }
+
+  // 只改资料、保留现有内容：名字空则忽略，落到本机后刷新问候
+  function saveProfile(e) {
+    if (e) e.preventDefault();
+    const form = $("#me-form");
+    const name = form.name.value.trim();
+    const title = form.title.value.trim();
+    if (!name) {
+      showToast("先填个名字");
+      form.name.focus();
+      return;
+    }
+    PROFILE.name = name;
+    PROFILE.title = title;
+    persistProfile();
+    closeMe();
+    renderApp();
+    showToast("资料已保存");
+  }
+
+  // 清空内置示例，换成以「我」为主的空白结构，之后用「建图 / 新建项目」自己填
+  function startFresh() {
+    const name = ($("#me-form").name.value.trim() || PROFILE.name || "我").slice(0, 20);
+    if (!confirm(`清空内置示例，从空白开始？\n会删掉「林予」的示例内容，换成属于「${name}」的空白结构。这一步不能撤销。`)) return;
+    PROFILE.name = name;
+    PROFILE.title = ($("#me-form").title.value.trim()) || PROFILE.title || "";
+    persistProfile();
+    state.editable = window.NAVI_EMPTY_NODES(name);
+    state.overrides = {};
+    state.log = [];
+    state.undo = [];
+    state.redo = [];
+    saveStore();
+    closeMe();
+    boot();
+    showToast("已清空示例，开始记你自己的吧");
   }
 
   // 修复早期版本残留的空/损坏本地数据：正常数据一定含 root + 四个领域；
@@ -2028,7 +2095,7 @@
   }
 
   // —— 模态无障碍：dialog 语义 + 焦点陷阱 + 关闭还焦点 + 背景 inert ——
-  const OVERLAY_IDS = ["#unblock-overlay", "#search-overlay", "#overlay", "#edit-overlay", "#gen-overlay", "#ai-overlay"];
+  const OVERLAY_IDS = ["#unblock-overlay", "#search-overlay", "#overlay", "#edit-overlay", "#gen-overlay", "#ai-overlay", "#me-overlay"];
   const OVERLAY_LABEL = { "#search-overlay": "搜索", "#overlay": "专注计时" };
   let _modalLastFocus = null;
 
@@ -2173,6 +2240,16 @@
     $("#ai-overlay").addEventListener("click", (e) => {
       if (e.target.id === "ai-overlay") closeAI();
     });
+    const meBtn = $("#btn-me");
+    if (meBtn) meBtn.addEventListener("click", openMe);
+    const homeBtn = $("#btn-home");
+    if (homeBtn) homeBtn.addEventListener("click", exitToWelcome);
+    $("#me-form").addEventListener("submit", saveProfile);
+    $("#me-fresh").addEventListener("click", startFresh);
+    $("#me-cancel").addEventListener("click", closeMe);
+    $("#me-overlay").addEventListener("click", (e) => {
+      if (e.target.id === "me-overlay") closeMe();
+    });
     $("#search-overlay").addEventListener("click", (e) => {
       if (e.target.id === "search-overlay") closeSearch();
     });
@@ -2208,6 +2285,7 @@
         else if ($("#unblock-overlay").classList.contains("is-on")) closeUnblock();
         else if ($("#gen-overlay").classList.contains("is-on")) closeGen();
         else if ($("#ai-overlay").classList.contains("is-on")) closeAI();
+        else if ($("#me-overlay").classList.contains("is-on")) closeMe();
         else if ($("#edit-overlay").classList.contains("is-on")) closeEditor();
         else if ($("#overlay").classList.contains("is-on")) finishFocus(false);
       }
@@ -2241,6 +2319,23 @@
     const a = $("#view-app");
     if (a) a.classList.remove("is-hidden");
     boot();
+  }
+
+  // 回到主页：收起所有弹窗、停掉时钟与计时，切回欢迎屏（数据都在本机，随时可再「进入」）
+  function exitToWelcome() {
+    OVERLAY_IDS.forEach((id) => {
+      const ov = document.querySelector(id);
+      if (ov) ov.classList.remove("is-on");
+    });
+    if (state.session) finishFocus(false);
+    stopClock();
+    state.view = "welcome";
+    const a = $("#view-app");
+    if (a) a.classList.add("is-hidden");
+    const w = $("#view-welcome");
+    if (w) w.classList.remove("is-hidden");
+    const enter = $("#btn-enter");
+    if (enter) setTimeout(() => enter.focus(), 0);
   }
 
   loadStore();
