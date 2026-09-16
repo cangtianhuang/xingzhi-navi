@@ -83,12 +83,45 @@
     return state.overrides[id];
   }
 
+  // 把「今天 16:20 / 昨天 / 周一 / 上周五」这类相对时间反推成时间戳，
+  // 用于给只有 updatedAt 文本、没有 updatedTs 的历史/种子数据回填，救活「好久没动的」。
+  function tsFromUpdatedAt(s) {
+    if (!s) return undefined;
+    if (/刚刚|刚确认|可以开始|要等前面/.test(s)) return Date.now();
+    const now = new Date();
+    const tm = s.match(/(\d{1,2}):(\d{2})/);
+    const hh = tm ? +tm[1] : 12;
+    const mm = tm ? +tm[2] : 0;
+    const d = new Date(now);
+    d.setHours(hh, mm, 0, 0);
+    if (s.includes("今天")) return d.getTime();
+    if (s.includes("昨天")) {
+      d.setDate(d.getDate() - 1);
+      return d.getTime();
+    }
+    const wkMap = { 日: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
+    const wm = s.match(/周([日一二三四五六])/);
+    if (wm) {
+      const target = wkMap[wm[1]];
+      let diff = (now.getDay() - target + 7) % 7; // 距离本周该星期几过去了几天
+      if (s.includes("上周")) diff += 7;
+      d.setDate(d.getDate() - diff);
+      return d.getTime();
+    }
+    return undefined;
+  }
+
   // 把用户的改动叠加到原始节点上，得到当前真实节点（深拷贝 deps，避免误改常量包）
   function applyOverrides(id, nodes) {
     const ov = state.overrides[id] || {};
     return nodes.map((n) => {
       const merged = ov[n.id] ? { ...n, ...ov[n.id] } : { ...n };
       if (merged.deps) merged.deps = [...merged.deps];
+      // 缺 updatedTs 的历史数据按 updatedAt 文本回填，让「好久没动的」能对老条目生效
+      if (typeof merged.updatedTs !== "number") {
+        const t = tsFromUpdatedAt(merged.updatedAt);
+        if (typeof t === "number") merged.updatedTs = t;
+      }
       return merged;
     });
   }
@@ -226,6 +259,7 @@
       estimateMin: fields.estimateMin || 0,
       deps: fields.deps || [],
       updatedAt: "刚刚",
+      updatedTs: Date.now(),
     };
     nodes.push(node);
     reflowDeps();
@@ -1410,6 +1444,7 @@
           estimateMin: 0,
           deps: [],
           updatedAt: "刚刚",
+          updatedTs: Date.now(),
         };
         nodes.push(p);
       }
@@ -1439,6 +1474,7 @@
         estimateMin: Number(it.estimateMin) || 0,
         deps: [],
         updatedAt: "刚刚",
+        updatedTs: Date.now(),
       };
       nodes.push(node);
       if (!firstId) firstId = node.id;
@@ -1517,11 +1553,11 @@
     let inbox = nodes.find((n) => n.type === "project" && n.name === "随手记" && n.domain === "work");
     if (!inbox) {
       inbox = { id: newId("project"), parentId: "work", name: "随手记", type: "project", domain: "work",
-        progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚" };
+        progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚", updatedTs: Date.now() };
       nodes.push(inbox);
     }
     const t = { id: newId("task"), parentId: inbox.id, name: line.slice(0, 40), type: "task", domain: "work",
-      progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚" };
+      progress: 0, status: "active", brief: "", nextAction: "", nextHint: "", estimateMin: 0, deps: [], updatedAt: "刚刚", updatedTs: Date.now() };
     nodes.push(t);
     reflowDeps();
     saveStore();
