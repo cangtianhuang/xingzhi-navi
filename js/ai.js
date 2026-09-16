@@ -36,28 +36,48 @@ window.NaviAI = (function () {
     return base + "/chat/completions";
   }
 
-  async function suggest(prompt) {
+  const TIMEOUT_MS = 30000;
+  // 统一的对话请求：带 30s 超时/可取消，挂起时不再让按钮永久卡在「AI 想想…」
+  async function postChat(messages, opts) {
     const c = getConfig();
     if (!c.apiKey) throw new Error("还没填 API Key");
-    const res = await fetch(endpoint(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + c.apiKey },
-      body: JSON.stringify({
-        model: c.model || DEFAULT_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.5,
-        max_tokens: 300,
-      }),
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(endpoint(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + c.apiKey },
+        body: JSON.stringify({
+          model: c.model || DEFAULT_MODEL,
+          messages,
+          temperature: opts.temperature,
+          max_tokens: opts.max_tokens,
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") throw new Error("请求超时（30 秒没响应），稍后再试");
+      throw new Error("网络请求失败：" + (err && err.message ? err.message : err));
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error("请求失败 HTTP " + res.status + (body ? "：" + body.slice(0, 160) : ""));
     }
     const data = await res.json();
-    const text = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+    return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+  }
+
+  async function suggest(prompt) {
+    const text = await postChat(
+      [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: prompt },
+      ],
+      { temperature: 0.5, max_tokens: 300 }
+    );
     return parse(text);
   }
 
@@ -89,25 +109,13 @@ window.NaviAI = (function () {
       "domain 必须四选一：work（工作）/ study（学习）/ life（生活）/ proj（项目）。" +
       "task 是最小可执行的一件事，一句话；同一 project 可以有多条 task 拆成多项。" +
       "estimateMin 是预计分钟的数字，拿不准就给 25。最多输出 20 项。";
-    const res = await fetch(endpoint(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + c.apiKey },
-      body: JSON.stringify({
-        model: c.model || DEFAULT_MODEL,
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: String(text || "").slice(0, 2000) },
-        ],
-        temperature: 0.4,
-        max_tokens: 1200,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error("请求失败 HTTP " + res.status + (body ? "：" + body.slice(0, 160) : ""));
-    }
-    const data = await res.json();
-    const txt = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+    const txt = await postChat(
+      [
+        { role: "system", content: sys },
+        { role: "user", content: String(text || "").slice(0, 2000) },
+      ],
+      { temperature: 0.4, max_tokens: 1200 }
+    );
     return parseArray(txt);
   }
 
