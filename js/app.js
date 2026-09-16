@@ -87,12 +87,12 @@
     return state.users.find((u) => u.id === state.userId) || state.users[0];
   }
 
-  // 每位成员的原始节点：已分叉的可编辑副本优先，其次只读常量包，最后空图模板
+  // 原始节点：已分叉的可编辑副本优先，其次只读常量包（林予），最后空图模板
   function baseNodesFor(id) {
     if (state.extraNodes[id]) return state.extraNodes[id];
     if (window.NAVI_PACKS[id]) return window.NAVI_PACKS[id].nodes;
     const user = state.users.find((u) => u.id === id);
-    return window.NAVI_EMPTY_NODES(user?.name || "新成员");
+    return window.NAVI_EMPTY_NODES(user?.name || "我");
   }
 
   function overridesFor(id) {
