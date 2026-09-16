@@ -222,6 +222,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 .hero p em { font-style: normal; color: var(--rose); font-weight: 600; }
 .hero .sub-done { color: var(--ink-3); font-size: 13px; }
 .hero .sub-done em { color: var(--ink-2); }
+/* 内联文字按钮：空状态里的「恢复示例数据」等 */
+.link-btn {
+  display: inline;
+  margin-left: 6px;
+  padding: 0;
+  color: var(--rose);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover { color: #a56b58; }
+/* 状态树空状态提示文字 */
+.map-empty-text { fill: var(--ink-3); font-size: 14px; font-family: var(--font); }
 
 /* 首屏「现在最该做的一件事」——首屏视觉焦点 */
 .now-pick {

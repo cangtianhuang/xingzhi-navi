@@ -461,6 +461,19 @@
     state.userId = seed.id;
   }
 
+  // 恢复到内置示例数据（林予）：清掉本机存的改动副本，回落到只读常量包
+  // 用于修复早期版本残留的空/损坏本地数据，不必再去控制台跑 localStorage.clear()
+  function resetToSample() {
+    if (!confirm("恢复到内置示例（林予）？会清掉你在本机做过的改动。")) return;
+    delete state.extraNodes[state.userId];
+    if (state.overrides) delete state.overrides[state.userId];
+    state.undo[state.userId] = [];
+    state.redo[state.userId] = [];
+    saveStore();
+    boot();
+    showToast("已恢复内置示例数据");
+  }
+
   function boot() {
     ensureSingleUser();
     state.view = "app";
@@ -623,7 +636,9 @@
     const pick = topPick(data.nodes);
     let lead;
     if (open.length === 0) {
-      lead = "状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。";
+      lead =
+        '状态图还是空的。点顶部「AI 建图」粘一段近况自动生成，或选一个领域点「＋ 新建项目」手动加。' +
+        '<button class="link-btn" id="btn-reset-sample">恢复示例数据</button>';
     } else if (blocked.length) {
       lead = `<em>${blocked.length}</em> 件卡住了，最该先解开《${escapeXml(blocked[0].name)}》。`;
     } else if (pick) {
@@ -632,6 +647,8 @@
       lead = "手上没有待办了，喘口气。";
     }
     $("#greet-sub").innerHTML = doneLine ? `${lead} <span class="sub-done">${doneLine}</span>` : lead;
+    const resetBtn = $("#btn-reset-sample");
+    if (resetBtn) resetBtn.addEventListener("click", resetToSample);
 
     renderNowPick(data.nodes);
 
@@ -640,7 +657,8 @@
     META.domains.forEach((d) => {
       const s = domainStats(d.id);
       const btn = document.createElement("button");
-      btn.className = "domain-card" + (state.domain === d.id ? " is-on" : "");
+      // 只有真的进到某个领域的树里，才高亮它；「今天」视图是跨领域的，不高亮任何一张
+      btn.className = "domain-card" + (state.treeOpen && state.domain === d.id ? " is-on" : "");
       btn.innerHTML = `<span class="name">${d.name}</span>${s.blocked ? '<span class="dot"></span>' : ""}`;
       btn.title = s.blocked ? `${d.name} · ${s.blocked} 件卡住了` : d.kicker;
       btn.addEventListener("click", () => {
@@ -867,9 +885,23 @@
     renderCrumbs();
     const nodesAll = DATA().nodes;
     const vis = MapU.visibleNodes(allNodes(), state.focusId, state.filter);
+    const svg = $("#map-svg");
+    // 当前范围/筛选下没有可显示的卡片时，给一句友好的空状态，而不是一片空白画布
+    if (!vis.length) {
+      svg.setAttribute("viewBox", "0 0 640 200");
+      svg.removeAttribute("width");
+      svg.removeAttribute("height");
+      const msg =
+        state.filter === "blocked"
+          ? "这个范围里现在没有卡住的事，挺好。"
+          : state.filter === "today"
+          ? "这个范围里没有能今天顺手做完的小事。"
+          : "这里还没有内容。点上方「全部」，或换个筛选看看。";
+      svg.innerHTML = `<text x="24" y="44" class="map-empty-text">${escapeXml(msg)}</text>`;
+      return;
+    }
     const rootId = vis.some((n) => n.id === state.focusId) ? state.focusId : vis[0]?.id || "root";
     const { positions, width, height } = MapU.layout(vis, rootId);
-    const svg = $("#map-svg");
     const map = MapU.byId(vis);
     const sel = map.get(state.selectedId) || map.get(rootId);
     if (sel) state.selectedId = sel.id;
@@ -1775,7 +1807,10 @@
       renderApp();
     });
     $("#btn-backtoday").addEventListener("click", () => {
+      // 回到「今天」：清掉领域筛选与焦点，回到跨领域的全局视图
       state.treeOpen = false;
+      state.domain = "all";
+      state.focusId = "root";
       renderApp();
     });
     $("#btn-gen").addEventListener("click", openGen);
