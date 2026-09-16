@@ -292,21 +292,25 @@
   function deleteNode(id) {
     pushUndo();
     const nodes = ensureEditable();
-    const doomed = new Set([id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      nodes.forEach((n) => {
-        if (n.parentId && doomed.has(n.parentId) && !doomed.has(n.id)) {
-          doomed.add(n.id);
-          grew = true;
-        }
-      });
-    }
+    const doomed = subtreeIds(nodes, id);
+    // 记下被删子树的「外部父级」（自己不在删除集里），删完好回收变空的项目
+    const parentIds = new Set();
+    nodes.forEach((n) => {
+      if (doomed.has(n.id) && n.parentId && !doomed.has(n.parentId)) parentIds.add(n.parentId);
+    });
     state.editable = nodes.filter((n) => !doomed.has(n.id));
-    // 清掉指向已删除节点的依赖
+    // 项目下已经一件事都没有了，就把这个空项目也删掉；领域是固定结构，保留
+    const removed = new Set(doomed);
+    parentIds.forEach((pid) => {
+      const p = state.editable.find((n) => n.id === pid);
+      if (p && p.type === "project" && !state.editable.some((n) => n.parentId === pid)) {
+        state.editable = state.editable.filter((n) => n.id !== pid);
+        removed.add(pid);
+      }
+    });
+    // 清掉指向所有已删除节点（含被回收的空项目）的依赖
     state.editable.forEach((n) => {
-      if (n.deps) n.deps = n.deps.filter((d) => !doomed.has(d));
+      if (n.deps) n.deps = n.deps.filter((d) => !removed.has(d));
     });
     reflowDeps();
     saveStore();
