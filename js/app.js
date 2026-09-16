@@ -907,7 +907,7 @@
 
     const tBox = $("#ans-today");
     tBox.innerHTML =
-      `<div class="ans-h">今天能清掉的${today.length ? ` · ${today.length}` : ""}</div>` +
+      `<div class="ans-h">今天能清掉的${today.length ? ` · <b>${today.length}</b>` : ""}</div>` +
       (today.length
         ? today.slice(0, 6).map((n) => ansItemHTML(n, nodes, "today")).join("")
         : `<div class="ans-empty">没有能今天顺手做完的小事。</div>`);
@@ -918,7 +918,7 @@
     if (stale.length) {
       sBox.style.display = "";
       sBox.innerHTML =
-        `<div class="ans-h">好久没动的 · 还准吗？</div>` +
+        `<div class="ans-h">好久没动的 · <b>${stale.length}</b> · 还准吗？</div>` +
         stale
           .slice(0, 5)
           .map(
