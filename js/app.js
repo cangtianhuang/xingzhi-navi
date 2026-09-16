@@ -1924,7 +1924,87 @@
     renderApp();
   }
 
+  // —— 模态无障碍：dialog 语义 + 焦点陷阱 + 关闭还焦点 + 背景 inert ——
+  const OVERLAY_IDS = ["#unblock-overlay", "#search-overlay", "#overlay", "#edit-overlay", "#gen-overlay", "#ai-overlay"];
+  const OVERLAY_LABEL = { "#search-overlay": "搜索", "#overlay": "专注计时" };
+  let _modalLastFocus = null;
+
+  function overlayFocusables(card) {
+    return Array.from(
+      card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter((x) => !x.disabled && x.getClientRects().length);
+  }
+
+  function openOverlayA11y(ov, card) {
+    _modalLastFocus = document.activeElement;
+    const app = $("#view-app");
+    if (app) app.setAttribute("inert", "");
+    // 各 open 函数通常已把焦点放进某个输入框；只有它没放时，才兜底聚焦第一个可聚焦元素
+    setTimeout(() => {
+      if (!card.contains(document.activeElement)) {
+        const f = overlayFocusables(card)[0];
+        if (f) f.focus();
+      }
+    }, 0);
+  }
+
+  function closeOverlayA11y() {
+    const app = $("#view-app");
+    if (app) app.removeAttribute("inert");
+    if (_modalLastFocus && _modalLastFocus.focus) _modalLastFocus.focus();
+    _modalLastFocus = null;
+  }
+
+  function setupModals() {
+    OVERLAY_IDS.forEach((id) => {
+      const ov = document.querySelector(id);
+      if (!ov) return;
+      const card = ov.firstElementChild;
+      if (card) {
+        card.setAttribute("role", "dialog");
+        card.setAttribute("aria-modal", "true");
+        const h = card.querySelector("h1, h2, h3");
+        if (h) {
+          if (!h.id) h.id = id.slice(1) + "-title";
+          card.setAttribute("aria-labelledby", h.id);
+        } else if (OVERLAY_LABEL[id]) {
+          card.setAttribute("aria-label", OVERLAY_LABEL[id]);
+        }
+      }
+      const obs = new MutationObserver(() => {
+        const on = ov.classList.contains("is-on");
+        if (on && !ov._a11yOn) {
+          ov._a11yOn = true;
+          openOverlayA11y(ov, card);
+        } else if (!on && ov._a11yOn) {
+          ov._a11yOn = false;
+          closeOverlayA11y();
+        }
+      });
+      obs.observe(ov, { attributes: true, attributeFilter: ["class"] });
+    });
+    // 焦点陷阱：弹窗打开时，Tab 在弹窗内首尾循环
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const ov = OVERLAY_IDS.map((id) => document.querySelector(id)).find((o) => o && o.classList.contains("is-on"));
+      if (!ov) return;
+      const card = ov.firstElementChild;
+      const fs = overlayFocusables(card);
+      if (!fs.length) return;
+      const first = fs[0];
+      const last = fs[fs.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
   function bind() {
+    setupModals();
     document.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
         state.filter = btn.dataset.filter;
