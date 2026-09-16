@@ -323,7 +323,38 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.ans-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.ans-actions { display: flex; gap: 8px; flex: 0 0 auto; align-items: center; }
+.ans-more { position: relative; }
+.more-btn { font-weight: 700; letter-spacing: 1px; line-height: 1; }
+.more-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 132px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.ans-more.is-on .more-menu { display: flex; }
+.more-menu button {
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.more-menu button:hover { background: var(--surface); color: var(--ink); }
+.more-menu button.danger:hover { background: var(--rose-soft); color: var(--rose); }
 .ans-empty { font-size: 14px; color: var(--ink-3); padding: 4px 2px; }
 .ans-full {
   align-self: flex-start;

@@ -800,6 +800,8 @@
     const desc = kind === "blocked" ? node.blockedReason || sug.text : sug.text;
     const eta = node.estimateMin ? ` · 约 ${node.estimateMin} 分钟` : "";
     const isLeaf = MapU.childrenOf(nodes, node.id).length === 0;
+    // 临时变卦是常事：直接在「今天」这屏就能改名或不做了，不必先切到「看全貌」
+    const canEdit = node.type === "task" || node.type === "project";
     return `<div class="ans-item is-${kind}" data-id="${node.id}">
         <div class="ans-main">
           <div class="ans-name">${escapeXml(node.name)}</div>
@@ -809,7 +811,14 @@
           ${kind === "blocked" ? `<button class="np-go" data-unblock="${node.id}">解卡</button>` : ""}
           ${kind !== "blocked" && sug.canAct ? `<button class="np-go" data-go="${node.id}">开始做</button>` : ""}
           ${isLeaf ? `<button class="ans-done" data-done="${node.id}" title="标记做完">✓ 做完</button>` : ""}
-          <button class="np-open" data-open="${node.id}">去看看</button>
+          <div class="ans-more">
+            <button class="np-open more-btn" data-more title="更多" aria-label="更多" aria-haspopup="true" aria-expanded="false">⋯</button>
+            <div class="more-menu" role="menu">
+              ${canEdit ? `<button role="menuitem" data-edit-ans="${node.id}">改名 / 改内容</button>` : ""}
+              ${canEdit ? `<button role="menuitem" class="danger" data-del-ans="${node.id}">不做了</button>` : ""}
+              <button role="menuitem" data-open="${node.id}">去看看</button>
+            </div>
+          </div>
         </div>
       </div>`;
   }
@@ -840,6 +849,15 @@
     ov[id] = { ...(ov[id] || {}), updatedAt: "刚确认", updatedTs: Date.now() };
     saveStore();
     renderApp();
+  }
+
+  // 收起答案卡片上所有展开的「更多」菜单
+  function closeAnsMenus() {
+    document.querySelectorAll(".ans-more.is-on").forEach((w) => {
+      w.classList.remove("is-on");
+      const b = w.querySelector("[data-more]");
+      if (b) b.setAttribute("aria-expanded", "false");
+    });
   }
 
   function renderAnswer(nodes) {
@@ -923,6 +941,34 @@
       );
       box.querySelectorAll("[data-fresh]").forEach((btn) =>
         btn.addEventListener("click", () => confirmFresh(btn.getAttribute("data-fresh")))
+      );
+      box.querySelectorAll("[data-more]").forEach((btn) =>
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation(); // 不冒泡到「点空白关菜单」的全局监听
+          const wrap = btn.closest(".ans-more");
+          const wasOpen = wrap.classList.contains("is-on");
+          closeAnsMenus();
+          if (!wasOpen) {
+            wrap.classList.add("is-on");
+            btn.setAttribute("aria-expanded", "true");
+          }
+        })
+      );
+      box.querySelectorAll("[data-edit-ans]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          closeAnsMenus();
+          openEditor("edit", btn.getAttribute("data-edit-ans"));
+        })
+      );
+      box.querySelectorAll("[data-del-ans]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-del-ans");
+          const n = MapU.byId(nodes).get(id);
+          if (!n) return;
+          if (!confirm(`不做「${n.name}」了？它下面的内容也会一起删掉。`)) return;
+          deleteNode(id);
+          renderApp();
+        })
       );
       box.querySelectorAll("[data-open]").forEach((btn) =>
         btn.addEventListener("click", () => jumpToTree(btn.getAttribute("data-open")))
@@ -2051,6 +2097,10 @@
 
   function bind() {
     setupModals();
+    // 点卡片「更多」菜单以外的任何地方，都把菜单收起来
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".ans-more")) closeAnsMenus();
+    });
     document.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
         state.filter = btn.dataset.filter;
