@@ -160,7 +160,10 @@
   function reflowDeps() {
     const ov = overridesFor(state.userId);
     const freed = [];
-    for (let pass = 0; pass < 6; pass++) {
+    // 上限按节点数（+1），保证再深的依赖链也能收敛到稳定，而不是固定 6 趟中途停下
+    const maxPass = currentNodes().length + 1;
+    let pass = 0;
+    for (; pass < maxPass; pass++) {
       const nodes = currentNodes();
       const map = MapU.byId(nodes);
       let changed = false;
@@ -186,6 +189,7 @@
       });
       if (!changed) break;
     }
+    if (pass >= maxPass) console.warn("reflowDeps 达到迭代上限，依赖链可能异常（存在环？）");
     _freed = freed;
   }
   let _freed = [];
@@ -377,6 +381,34 @@
       });
     }
     return nodes.filter((n) => !sub.has(n.id) && (n.type === "task" || n.type === "project"));
+  }
+
+  // 沿 deps 有向边，从 fromId 出发能否到达 toId（用于建依赖时检测会不会成环）
+  function depReaches(fromId, toId, nodes) {
+    const map = MapU.byId(nodes);
+    const seen = new Set();
+    const stack = [fromId];
+    while (stack.length) {
+      const cur = stack.pop();
+      if (cur === toId) return true;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      const n = map.get(cur);
+      (n && n.deps ? n.deps : []).forEach((d) => stack.push(d));
+    }
+    return false;
+  }
+
+  // 过滤掉会与本节点成环的依赖（选中的 dep 反向已能到达自己）
+  function pruneCyclicDeps(nodeId, depIds) {
+    const nodes = currentNodes();
+    const kept = [];
+    const dropped = [];
+    (depIds || []).forEach((d) => {
+      if (d === nodeId || depReaches(d, nodeId, nodes)) dropped.push(d);
+      else kept.push(d);
+    });
+    return { kept, dropped };
   }
 
   // —— 规则建议引擎：让「下一步」名副其实 ——
@@ -1130,11 +1162,12 @@
     const st = MapU.statusOf(node, nodesAll);
     const pr = MapU.progressOf(node, nodesAll);
     const typeLabel = { root: "总览", domain: "领域", project: "项目", task: "具体的事" }[node.type] || "";
-    const deps = (node.deps || []).map((id) => MapU.byId(nodesAll).get(id)).filter(Boolean);
+    const isLeaf = MapU.childrenOf(nodesAll, node.id).length === 0;
+    // 只有叶子谈得上「在等别的事」；容器状态由子项聚合，其自身 deps 不参与放行，故不展示
+    const deps = isLeaf ? (node.deps || []).map((id) => MapU.byId(nodesAll).get(id)).filter(Boolean) : [];
     // 反向依赖：哪些事在等着「我」做完（我一完成，它们就被放行）
     const dependents = nodesAll.filter((n) => (n.deps || []).includes(node.id));
     const blockers = node.blockedReason;
-    const isLeaf = MapU.childrenOf(nodesAll, node.id).length === 0;
     const canSet = isLeaf && (node.type === "task" || node.type === "project");
     const sug = suggestFor(node, nodesAll);
     const canStart = sug.canAct;
@@ -1191,7 +1224,9 @@
         <p>${blockers ? escapeXml(blockers) : st === "waiting" ? "它本身没问题，只是前面的事还没做完。" : "没有卡住的地方。"}</p>
         ${st === "blocked" && canEdit ? `<button class="tool" id="btn-unblock" style="margin-top:10px">解卡 · 拆成能动的一步</button>` : ""}
       </div>
-      <div class="block">
+      ${
+        isLeaf
+          ? `<div class="block">
         <h4>在等什么</h4>
         ${
           deps.length
@@ -1203,7 +1238,9 @@
                 .join("")
             : `<p class="empty">不用等别的事。</p>`
         }
-      </div>
+      </div>`
+          : ""
+      }
       ${
         dependents.length
           ? `<div class="block">
@@ -1835,7 +1872,13 @@
     e.preventDefault();
     if (!state.editor) return;
     const form = $("#edit-form");
-    const deps = Array.from($("#edit-deps").querySelectorAll("input:checked")).map((i) => i.value);
+    let deps = Array.from($("#edit-deps").querySelectorAll("input:checked")).map((i) => i.value);
+    // 编辑已有节点时做一次环检测：选中的依赖若反向已能到达自己，则拒绝这条，避免互等死锁
+    if (state.editor.mode === "edit") {
+      const { kept, dropped } = pruneCyclicDeps(state.editor.targetId, deps);
+      deps = kept;
+      if (dropped.length) showToast("已忽略会造成互相等待的依赖");
+    }
     const fields = {
       name: form.name.value.trim() || "未命名",
       nextAction: form.nextAction.value.trim(),
