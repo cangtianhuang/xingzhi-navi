@@ -612,6 +612,13 @@
     setTimeout(() => {
       showToast(pick ? `${nowParts().greet}，今天先看这件：《${pick.name}》` : `${nowParts().greet}，今天先看一眼状态`);
     }, 700);
+    // 若开了开工提醒：当天首次打开且已过 9:00 时，也补一条系统通知——
+    // 这样不必让页面通宵开着守到 9:00，开工提醒才真正可靠（与晨间第一屏合并触发）
+    if (remindOn() && "Notification" in window && Notification.permission === "granted" && new Date().getHours() >= 9) {
+      try {
+        new Notification("行知 Navi · 开工提醒", { body: pick ? `今天最该先动：${pick.name}` : "今天先看一眼状态吧" });
+      } catch (e) {}
+    }
   }
 
   // 可选的开工提醒（纯前端：页面开着时，每天 9:00 用系统通知提醒看一眼）
@@ -1388,13 +1395,14 @@
     const sess = state.session;
     let didDone = false;
     if (sess) {
-      logEntry(sess.name || "一件事", done);
       // 只有叶子节点直接置完成；容器节点的状态由子节点派生，标完成没意义
       const isLeaf = MapU.childrenOf(currentNodes(), sess.nodeId).length === 0;
       if (done && isLeaf) {
         setStatus(sess.nodeId, "done");
         didDone = true;
       }
+      // 按「是否真的置为完成」记日志：容器点了「做完了」也不算完成，避免日志与状态打架
+      logEntry(sess.name || "一件事", didDone);
     }
     closeFocus();
     if (state.view === "app") renderApp();
