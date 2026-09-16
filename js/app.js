@@ -474,8 +474,24 @@
     showToast("已恢复内置示例数据");
   }
 
+  // 修复早期版本残留的空/损坏本地数据：正常数据一定含 root + 四个领域；
+  // 若连一个领域节点都没有（或缺 root），说明本机存的是坏数据，自动回落到内置示例。
+  function healIfBroken() {
+    const nodes = currentNodes();
+    const hasDomain = nodes.some((n) => n.type === "domain");
+    const hasRoot = nodes.some((n) => n.type === "root");
+    if (hasDomain && hasRoot) return false;
+    delete state.extraNodes[state.userId];
+    if (state.overrides) delete state.overrides[state.userId];
+    state.undo[state.userId] = [];
+    state.redo[state.userId] = [];
+    saveStore();
+    return true;
+  }
+
   function boot() {
     ensureSingleUser();
+    const healed = healIfBroken();
     state.view = "app";
     state.domain = "all";
     state.focusId = "root";
@@ -490,7 +506,11 @@
     renderApp();
     refreshRemindBtn();
     scheduleReminder();
-    morningGreet();
+    if (healed) {
+      setTimeout(() => showToast("检测到本地数据异常，已自动恢复内置示例"), 700);
+    } else {
+      morningGreet();
+    }
   }
 
   // 晨间第一屏：当天首次打开时，用一句问候把「最该做的一件」直接递到眼前
