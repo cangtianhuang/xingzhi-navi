@@ -2108,6 +2108,18 @@
 
   function bind() {
     setupModals();
+    // 多开同步：另一个标签页改了数据（写 localStorage），这里重读并刷新，避免各页数据不一致
+    let syncTimer = null;
+    window.addEventListener("storage", (e) => {
+      if (e.storageArea && e.storageArea !== localStorage) return;
+      // 只关心我们自己的几个键；e.key 为 null 表示对方执行了 clear()
+      if (e.key !== null && ![NODE_KEY, OVERRIDE_KEY, LOG_KEY].includes(e.key)) return;
+      clearTimeout(syncTimer); // 一次改动会连写三个键，合并成一次刷新
+      syncTimer = setTimeout(() => {
+        loadStore();
+        if (state.view === "app") renderApp();
+      }, 60);
+    });
     // 点卡片「更多」菜单以外的任何地方，都把菜单收起来
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".ans-more")) closeAnsMenus();
