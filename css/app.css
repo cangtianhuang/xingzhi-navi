@@ -617,6 +617,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
   .user-add { grid-template-columns: 1fr; }
   .search-card { width: 100%; }
   .brand-tag { display: none; }
+  /* 触控命中区抬到约 44px，手指也好点 */
+  .back, .chip, .domain-card { min-height: 40px; padding-top: 9px; padding-bottom: 9px; }
+  .np-go, .np-open { min-height: 40px; }
 }
 
 /* —— 深色主题：跟随系统 —— */

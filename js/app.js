@@ -777,6 +777,8 @@
       btn.className = "domain-card" + (state.treeOpen && state.domain === d.id ? " is-on" : "");
       btn.innerHTML = `<span class="name">${d.name}</span>${s.blocked ? '<span class="dot"></span>' : ""}`;
       btn.title = s.blocked ? `${d.name} · ${s.blocked} 件卡住了` : d.kicker;
+      // 红点信息只靠颜色不够，写进无障碍名称，读屏也能听到「几件卡住了」
+      btn.setAttribute("aria-label", s.blocked ? `${d.name}，${s.blocked} 件卡住了` : d.name);
       btn.addEventListener("click", () => {
         state.domain = state.domain === d.id ? "all" : d.id;
         state.focusId = state.domain === "all" ? "root" : d.id;
@@ -1002,6 +1004,9 @@
     const nodesAll = DATA().nodes;
     const vis = MapU.visibleNodes(allNodes(), state.focusId, state.filter);
     const svg = $("#map-svg");
+    // 键盘用户若正停在某张卡片上，重渲染后把焦点交还给选中卡片，否则焦点会掉回 body
+    const ae = document.activeElement;
+    const hadCardFocus = !!(ae && ae.classList && ae.classList.contains("node-card"));
     // 当前范围/筛选下没有可显示的卡片时，给一句友好的空状态，而不是一片空白画布
     if (!vis.length) {
       svg.setAttribute("viewBox", "0 0 640 200");
@@ -1045,7 +1050,7 @@
       const aria = escapeXml(`${n.name}，${label}，进度 ${Math.round(pr * 100)}%`);
       cards += `
         <g class="node-card${state.selectedId === n.id ? " is-sel" : ""}${st === "blocked" ? " is-blocked" : ""}${st === "done" ? " is-done" : ""}"
-           data-id="${n.id}" tabindex="0" role="button" aria-label="${aria}" transform="translate(${p.x}, ${p.y})">
+           data-id="${n.id}" tabindex="0" role="button"${state.selectedId === n.id ? ' aria-current="true"' : ""} aria-label="${aria}" transform="translate(${p.x}, ${p.y})">
           <rect class="plate" rx="12" width="${p.w}" height="${p.h}" />
           <circle cx="18" cy="29" r="7" fill="${colorOf(st)}" />
           <text class="node-glyph" x="18" y="29" text-anchor="middle" dominant-baseline="central">${escapeXml(glyphOf(st))}</text>
@@ -1066,6 +1071,10 @@
       const id = g.getAttribute("data-id");
       bindNodeDrag(g, id, nodesAll);
     });
+    if (hadCardFocus) {
+      const selCard = svg.querySelector(`.node-card[data-id="${state.selectedId}"]`);
+      if (selCard && selCard.focus) selCard.focus();
+    }
   }
 
   // 单击选中/下钻；按住拖动到另一张「领域 / 项目」卡片上则改父级
