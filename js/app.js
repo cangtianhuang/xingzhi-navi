@@ -72,6 +72,48 @@
     } catch (e) {}
   }
 
+  // —— 深色 / 浅色主题 —— 顶部按钮手动切换，选择存本机；没选过时跟随系统。
+  // <head> 里的内联脚本已在首帧前把 data-theme 写到 <html> 上，这里只负责切换与同步按钮文案。
+  const THEME_KEY = "xingzhi-navi-theme-v1";
+  function savedTheme() {
+    try {
+      const t = localStorage.getItem(THEME_KEY);
+      return t === "light" || t === "dark" ? t : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function systemTheme() {
+    try {
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch (e) {
+      return "light";
+    }
+  }
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") || savedTheme() || systemTheme();
+  }
+  // 应用主题：写 data-theme、刷新按钮文案；persist 为真时把用户的选择存本机
+  function applyTheme(t, persist) {
+    const theme = t === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", theme);
+    if (persist) {
+      try {
+        localStorage.setItem(THEME_KEY, theme);
+      } catch (e) {}
+    }
+    const btn = $("#btn-theme");
+    if (btn) {
+      // 按钮显示的是「点一下会切到的那个模式」
+      btn.textContent = theme === "dark" ? "浅色" : "深色";
+      btn.title = theme === "dark" ? "切换到浅色模式" : "切换到深色模式";
+      btn.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+    }
+  }
+  function toggleTheme() {
+    applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+  }
+
   function persistAll() {
     localStorage.setItem(NODE_KEY, JSON.stringify(state.editable));
     localStorage.setItem(OVERRIDE_KEY, JSON.stringify(state.overrides));
@@ -531,15 +573,22 @@
     return nodes.filter((n) => n.type === "project").filter((n) => effStatus(n, nodes) !== "done");
   }
 
-  // 恢复到内置示例数据（林予）：清掉本机存的改动副本，回落到只读常量包
-  // 用于修复早期版本残留的空/损坏本地数据，不必再去控制台跑 localStorage.clear()
+  // 一键恢复展示：清掉本机存的改动副本与活动日志，回落到只读内置示例（林予），
+  // 并把个人资料也还原成内置档案。演示阶段用来一键还原，也用于修复早期版本残留的
+  // 空/损坏本地数据，不必再去控制台跑 localStorage.clear()。
   function resetToSample() {
-    if (!confirm("恢复到内置示例（林予）？会清掉你在本机做过的改动。")) return;
+    if (!confirm("恢复展示：还原到内置示例（林予）？\n会清掉你在本机做过的改动、活动日志与改过的资料。")) return;
     state.editable = null;
     state.overrides = {};
+    state.log = [];
     state.undo = [];
     state.redo = [];
+    // 资料也回到内置档案，避免恢复后名字还停在演示时改过的名字上
+    const seed = (window.NAVI_SEED_USERS && window.NAVI_SEED_USERS[0]) || { name: "我" };
+    PROFILE = { name: seed.name || "我", title: seed.title || "" };
+    persistProfile();
     saveStore();
+    closeMe();
     boot();
     showToast("已恢复内置示例数据");
   }
@@ -2244,7 +2293,10 @@
     if (meBtn) meBtn.addEventListener("click", openMe);
     const homeBtn = $("#btn-home");
     if (homeBtn) homeBtn.addEventListener("click", exitToWelcome);
+    const themeBtn = $("#btn-theme");
+    if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
     $("#me-form").addEventListener("submit", saveProfile);
+    $("#me-restore").addEventListener("click", resetToSample);
     $("#me-fresh").addEventListener("click", startFresh);
     $("#me-cancel").addEventListener("click", closeMe);
     $("#me-overlay").addEventListener("click", (e) => {
@@ -2340,6 +2392,21 @@
 
   loadStore();
   bind();
+  // 同步一次按钮文案到当前主题（data-theme 已由 <head> 内联脚本定好）
+  applyTheme(currentTheme(), false);
+  // 没手动选过主题时，跟随系统的深浅变化实时切换
+  try {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSys = (e) => {
+      if (!savedTheme()) applyTheme(e.matches ? "dark" : "light", false);
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onSys);
+    else if (mq.addListener) mq.addListener(onSys);
+  } catch (e) {}
+  // 多标签页同步主题选择：一个页切换，其它页跟着变
+  window.addEventListener("storage", (e) => {
+    if (e.key === THEME_KEY) applyTheme(savedTheme() || systemTheme(), false);
+  });
   const enterBtn = $("#btn-enter");
   if (enterBtn) enterBtn.addEventListener("click", enterApp);
   else enterApp(); // 没有欢迎页（老结构）时直接进入

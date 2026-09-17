@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>行知 Navi</title>
     <link rel="stylesheet" href="css/app.css" />
+    <script>
+      // 首帧前定好主题，避免刷新时先闪一下浅色再跳深色：
+      // 本机存过的偏好优先，没存过就跟随系统偏好。
+      (function () {
+        try {
+          var t = localStorage.getItem("xingzhi-navi-theme-v1");
+          if (t !== "light" && t !== "dark") {
+            t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="view-welcome" class="view welcome">
@@ -37,6 +52,7 @@
         <button class="back" id="btn-ai" title="AI 设置">AI</button>
         <button class="back" id="btn-me" title="我的资料：改名字，或清空示例从空白开始">我的</button>
         <button class="back" id="btn-home" title="回到主页">主页</button>
+        <button class="back" id="btn-theme" title="切换深色 / 浅色模式" aria-pressed="false">深色</button>
         <time class="dot-time" id="clock"></time>
       </header>
 
@@ -174,11 +190,12 @@
       <form class="edit-card" id="me-form">
         <div class="detail-kicker">我的资料</div>
         <h3>填入你的信息，或从空白开始</h3>
-        <p class="ai-note">现在显示的是内置示例（「林予」）。把名字改成你自己的即可；想清掉示例内容、用自己的结构从头记，点下面的「清空示例」。资料只存在本机浏览器。</p>
+        <p class="ai-note">现在显示的是内置示例（「林予」）。把名字改成你自己的即可；想清掉示例内容、用自己的结构从头记，点下面的「清空示例」。演示阶段随时可点「恢复展示」一键还原到内置示例。资料只存在本机浏览器。</p>
         <label class="fld"><span>你的名字</span><input name="name" maxlength="20" placeholder="怎么称呼你" /></label>
         <label class="fld"><span>一句话身份（可留空）</span><input name="title" maxlength="30" placeholder="比如：产品与研究" /></label>
         <div class="edit-actions">
           <button type="submit" class="cta" id="me-save">保存</button>
+          <button type="button" class="cta ghost" id="me-restore" title="一键还原到内置示例（林予），用于演示">恢复展示</button>
           <button type="button" class="cta ghost danger" id="me-fresh">清空示例，从空白开始</button>
           <button type="button" class="cta ghost" id="me-cancel">取消</button>
         </div>

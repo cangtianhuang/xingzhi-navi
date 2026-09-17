@@ -470,7 +470,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 
 .map-wrap {
   flex: 1;
-  min-height: 0;
+  /* 稳定的高度下限：桌面「看全貌」的 1fr 轨道在 #view-app 从 display:none
+     切出的首帧会塌成 0（见上方 .app 注释），导致 overflow:auto 把已正常出图的
+     SVG 裁成 0 高、整棵树空白。给一个首帧即确定的像素下限兜底，轨道正常时
+     flex:1 仍会撑满，故不影响桌面铺满视口的观感。显式（非 auto）下限也
+     不阻断 flex 收缩到可用高度，面板更高时内部 overflow 照常滚动大图。 */
+  min-height: 420px;
   border-radius: 24px;
   background: var(--map-bg);
   overflow: auto;
@@ -682,8 +687,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
 }
 
 /* —— 深色主题：跟随系统 —— */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* —— 深色主题 —— 默认跟随系统，也可用顶部「深色/浅色」按钮手动切换。
+   主题由 <html> 上的 data-theme 决定（初值在 <head> 内联脚本里按「本机偏好 →
+   系统偏好」定好，避免首帧闪白）；此处只认 data-theme，不再直接挂 @media，
+   系统偏好已在加载时解析成具体的 light/dark 写进 data-theme。 */
+:root[data-theme="dark"] {
     --bg: #1b1915;
     --paper: #262320;
     --ink: #ece7dd;
@@ -712,29 +720,28 @@ button:focus-visible, input:focus-visible { outline: 2px solid #c9b8a6; outline-
     --card-done: #23231f;
     --link: #423c34;
   }
-  body {
+  [data-theme="dark"] body {
     background:
       radial-gradient(900px 500px at 12% -10%, #221f1a 0%, transparent 55%),
       radial-gradient(800px 420px at 100% 0%, #221d24 0%, transparent 50%),
       var(--bg);
   }
-  .cta:hover { background: #fbf6ec; }
-  .np-go:hover { background: #fbf6ec; }
-  .badge.blocked { color: #dc9d86; }
-  .badge.active { color: #9fb2c8; }
-  .badge.flowing, .badge.done { color: #93b6a2; }
-  .badge.waiting { color: #b5a3c6; }
-  .ss.blocked.is-on { color: #dc9d86; border-color: #5a4038; }
-  .ss.active.is-on { color: #9fb2c8; border-color: #3d4d5e; }
-  .ss.done.is-on { color: #93b6a2; border-color: #3d5548; }
-  .avatar.rose { color: #dc9d86; }
-  .avatar.sage { color: #93b6a2; }
-  .avatar.sand { color: #cfa976; }
-  .avatar.lilac { color: #b5a3c6; }
-  .user-del:hover { color: #dc9d86; }
-  .ans-done { color: #93b6a2; }
-  .tool.danger:hover { color: #dc9d86; border-color: #5a4038; }
-}
+  [data-theme="dark"] .cta:hover { background: #fbf6ec; }
+  [data-theme="dark"] .np-go:hover { background: #fbf6ec; }
+  [data-theme="dark"] .badge.blocked { color: #dc9d86; }
+  [data-theme="dark"] .badge.active { color: #9fb2c8; }
+  [data-theme="dark"] .badge.flowing, [data-theme="dark"] .badge.done { color: #93b6a2; }
+  [data-theme="dark"] .badge.waiting { color: #b5a3c6; }
+  [data-theme="dark"] .ss.blocked.is-on { color: #dc9d86; border-color: #5a4038; }
+  [data-theme="dark"] .ss.active.is-on { color: #9fb2c8; border-color: #3d4d5e; }
+  [data-theme="dark"] .ss.done.is-on { color: #93b6a2; border-color: #3d5548; }
+  [data-theme="dark"] .avatar.rose { color: #dc9d86; }
+  [data-theme="dark"] .avatar.sage { color: #93b6a2; }
+  [data-theme="dark"] .avatar.sand { color: #cfa976; }
+  [data-theme="dark"] .avatar.lilac { color: #b5a3c6; }
+  [data-theme="dark"] .user-del:hover { color: #dc9d86; }
+  [data-theme="dark"] .ans-done { color: #93b6a2; }
+  [data-theme="dark"] .tool.danger:hover { color: #dc9d86; border-color: #5a4038; }
 
 /* 尊重「减弱动效」偏好：压掉动画与位移，保留可用性 */
 @media (prefers-reduced-motion: reduce) {
